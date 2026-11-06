@@ -44,6 +44,6 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: python -m app.updater --quick
       - name: Veri bütünlüğü denetimi
-        if: always()
+        if: ${{ always() && env.DATABASE_URL != '' }}
         timeout-minutes: 2
         run: python -m app.data_quality --strict
