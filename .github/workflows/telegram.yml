@@ -5,7 +5,9 @@ name: Telegram kupon
 # (telegram_posts tablosu). TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID secret'ı yoksa sessizce atlar.
 on:
   schedule:
-    - cron: "20 6-23,0-1 * * *"  # UTC; her saatin 20. dakikası (veri güncelleme cron'u :00/:30'da)
+    # Türkiye saati 09:20–00:20 arasında 3 saatte bir, ayrıca 03:20'de sonuç kontrolü.
+    # Sabah kuponuna 09:20/12:20/15:20 fırsatı, akşam sonuçlarına periyodik kontrol.
+    - cron: "20 0,6,9,12,15,18,21 * * *"
   workflow_dispatch:
     inputs:
       force:
