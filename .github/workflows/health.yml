@@ -1,27 +1,41 @@
 name: Sağlık kontrolü
 
-# 30 dakikada bir canlı /api/health kontrol edilir; başarısızsa workflow fail olur (GitHub bildirimi).
+# API erişimini ve veritabanı bağlantısını doğrular. Veri eskimesi ayrı
+# güncelleme işlerinin sorumluluğundadır; sağlık kontrolü yeni job tetiklemez.
 on:
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
 
 permissions:
-  actions: write
+  contents: read
+
+concurrency:
+  group: health-check
+  cancel-in-progress: false
 
 jobs:
   health:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: /api/health
+      - name: API ve veritabanı sağlığı
+        shell: bash
         run: |
-          curl -sS --retry 2 --retry-delay 10 --max-time 30 -o health.json -w "HTTP %{http_code}\n" \
-            https://iddia-oran.vercel.app/api/health || true
-          cat health.json
-          curl -sSf --max-time 30 https://iddia-oran.vercel.app/api/health > /dev/null
-      - name: Başarısızsa hızlı güncellemeyi tetikle
-        if: failure()
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh workflow run quick.yml --repo "$GITHUB_REPOSITORY"
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 2 --retry-delay 5 \
+            --connect-timeout 10 --max-time 30 \
+            -H "Cache-Control: no-cache" \
+            -o health.json https://iddia-oran.vercel.app/api/health
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path("health.json").read_text())
+          if not data.get("db"):
+              raise SystemExit("API erişilebilir ama veritabanı sağlıklı değil")
+          if not data.get("ok"):
+              print("::warning::Veri tazeliği sorunu: " + ", ".join(data.get("problems", [])))
+          else:
+              print("API ve veritabanı sağlıklı")
+          PY
