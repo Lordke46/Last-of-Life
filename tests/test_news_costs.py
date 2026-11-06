@@ -54,13 +54,14 @@ class NewsCacheTests(unittest.TestCase):
             self.assertEqual(news.sync_news(conn), 0)
             self.assertEqual(len(calls), 4)
             self.assertEqual(news.sync_news(conn), 0)
-        self.assertEqual(len(calls), 4)  # cache ikinci gezide gereksiz RSS istemez
-        with db.session() as conn:
-            for key in [r["key"] for r in conn.execute("SELECT key FROM meta WHERE key LIKE 'news_poll_%'")]:
-                # Maça yakın iki takımın TTL'i dolmuş gibi davran.
-                if "never" in key:
-                    continue
-            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM meta WHERE key LIKE 'news_poll_%'").fetchone()["n"], 4)
+            self.assertEqual(len(calls), 4)  # hiçbir takım gereksiz tekrar sorgulanmadı
+            conn.execute("UPDATE meta SET value=? WHERE key LIKE 'news_poll_%'",
+                         ((now - timedelta(hours=2)).isoformat(),))
+            self.assertEqual(news.sync_news(conn), 0)
+            self.assertEqual(conn.execute(
+                "SELECT COUNT(*) n FROM meta WHERE key LIKE 'news_poll_%'"
+            ).fetchone()["n"], 4)
+        self.assertEqual(len(calls), 6)  # yalnız maçına 24 saat kalan iki takım yenilendi
 
 
 if __name__ == "__main__":
