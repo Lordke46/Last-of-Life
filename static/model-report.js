@@ -4,13 +4,41 @@ function confidenceReportHtml(report) {
   return `<div class="card"><h3>Güvene göre gerçek öneri başarısı</h3><p class="muted">İlk yayımlandığında kaydedilen önerinin sonucu. Lig, güven ve model sürümü ayrı ölçülür. Tutma oranı, kazanç oranı değildir. Az maçta sonuçlar belirsizdir; aralık yaklaşık %95 belirsizliği gösterir.</p>${rows.length ? `<div class="mr-scroll"><table><tr><th>Lig</th><th>Güven</th><th>Tutan / maç</th><th>Gerçek isabet</th><th>Tahmini şans</th><th>%95 aralık</th><th>Sürüm / yöntem</th></tr>${rows.map((r) => `<tr><td>${esc(state.leagues.find((l) => l.id === r.league)?.name || r.league)}</td><td>${esc(r.confidence_label)}</td><td>${r.won} / ${r.n}</td><td>${mrPct(r.hit_rate)}</td><td>${mrPct(r.predicted_probability)}</td><td>${mrPct(r.interval95[0])}–${mrPct(r.interval95[1])}</td><td>${esc(r.version.slice(0, 8))} / ${r.policy === "balanced_v2" ? "Dengeli" : r.policy === "hit_rate_v1" ? "İsabet öncelikli" : esc(r.policy)}</td></tr>`).join("")}</table></div>` : `<p class="muted">Henüz sonuçlanan kayıtlı öneri yok. Yeni maçlar sonuçlandıkça bu tablo dolacak.</p>`}<p class="muted">Güven etiketi kaydedilmemiş ${Number(report.legacy_without_confidence) || 0} eski maç bu ölçüme alınmadı.</p></div>`;
 }
 
+function realOddsPerformanceHtml(r) {
+  if (!r) return "";
+  const summary = r.summary || {};
+  const n = Number(summary.n) || 0;
+  const fmt = (v) => v == null ? "—" : mrPct(v);
+  const interval = summary.interval95;
+  const band = interval ? fmt(interval[0]) + "–" + fmt(interval[1]) : "—";
+  const segments = r.segments || {};
+  const rows = (segments.league || []).map((x) => `
+    <tr><td class="l">${esc(state.leagues.find(l => l.id === x.key)?.name || x.key)}</td>
+    <td>${x.n}</td><td>${fmt(x.hit_rate)}</td><td>${fmt(x.predicted_rate)}</td>
+    <td>${fmt(x.realized_roi)}</td><td>${x.reliable ? "30+ kayıt" : "Az veri"}</td></tr>`).join("");
+  return `<div class="card"><h3>Gerçek iddaa oranlarıyla yayımlanmış seçim performansı</h3>
+    <p class="muted">Yalnız maçtan önce kaydedilmiş, iddaa fiyatı doğrulanmış ilk tahminler.
+    Sonuç bilindikten sonra seçim veya oran değiştirilmez. Tek seçime 1 birim varsayımsal stake.</p>
+    <div class="mr-kpis">
+      <div><div class="muted">Sonuçlanan seçim</div><div class="ch-big">${n}</div></div>
+      <div><div class="muted">Gerçek isabet / tahmin</div><div class="ch-big">${fmt(summary.hit_rate)} / ${fmt(summary.predicted_rate)}</div></div>
+      <div><div class="muted">Gerçek ROI / tahmini</div><div class="ch-big">${fmt(summary.realized_roi)} / ${fmt(summary.expected_roi)}</div></div>
+    </div>
+    <p class="muted">%95 Wilson isabet aralığı: ${band}. Brier: ${summary.brier ?? "—"}.
+      ${summary.reliable ? "Örnek sayısı ön eşiği geçti; sonuçlar yine belirsizlik içerir." : "30'dan az seçim: performans yorumu için erken."}</p>
+    ${rows ? `<div class="mr-scroll"><table>
+      <tr><th class="l">Lig</th><th>Seçim</th><th>İsabet</th><th>Model tahmini</th><th>Gerçek ROI</th><th>Örnek</th></tr>
+      ${rows}</table></div>` : "<p class='muted'>Henüz gerçek oranlı, sonuçlanan ilk tahmin yok.</p>"}
+  </div>`;
+}
+
 function prospectiveHtml(forward) {
   if (forward?.variants) {
     const rows = Object.entries(forward.variants).map(([name, v]) => {
       const m = v.metrics;
       return `<tr><td>${esc(name)}</td><td>${m.n || 0}</td><td>${m.brier ?? "—"}</td><td>${m.logloss ?? "—"}</td></tr>`;
     }).join("");
-    return `<div class="card"><h3>Yayımlanmış tahminlerin gerçek sonuçları</h3><p class="muted">İlk maç öncesi kayıtlar; üç varyant aynı maçlarda karşılaştırılır. Kayıtlı tahmin: ${Number(forward.stored) || 0}. Sonuçlar veri biriktikçe oluşur. Yukarıdaki geçmiş testten ayrıdır.</p><table><tr><th>Varyant</th><th>Maç</th><th>Brier</th><th>Log-loss</th></tr>${rows}</table></div>` + confidenceReportHtml(forward.recommendations);
+    return `<div class="card"><h3>Yayımlanmış tahminlerin gerçek sonuçları</h3><p class="muted">İlk maç öncesi kayıtlar; üç varyant aynı maçlarda karşılaştırılır. Kayıtlı tahmin: ${Number(forward.stored) || 0}. Sonuçlar veri biriktikçe oluşur. Yukarıdaki geçmiş testten ayrıdır.</p><table><tr><th>Varyant</th><th>Maç</th><th>Brier</th><th>Log-loss</th></tr>${rows}</table></div>` + confidenceReportHtml(forward.recommendations) + realOddsPerformanceHtml(forward.real_odds_picks);
   }
   return "";
 }
