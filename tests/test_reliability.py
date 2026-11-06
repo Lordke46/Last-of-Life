@@ -119,7 +119,7 @@ class DatabaseCase(unittest.TestCase):
                                        ('good1', begin+timedelta(hours=2), [1.6, 4.2, 5]),
                                        ('good2', begin+timedelta(hours=3), [1.6, 4.2, 5])]:
                 c.execute('INSERT INTO iddaa_events(id,league,competition_id,kickoff,home,away,is_small,updated_at) VALUES(?,?,?,?,?,?,1,?)',
-                          (mid,'small:test:league',1,kickoff.isoformat(),'A','B',begin.isoformat()))
+                          (mid,'small:test:league',1,kickoff.isoformat(),'A','B',datetime.now(timezone.utc).isoformat()))
                 for market, odd in zip(('1','X','2'), odds):
                     c.execute('INSERT INTO iddaa_odds(event_id,market,odd) VALUES(?,?,?)',(mid,market,odd))
         with patch.object(coupons, 'LEAGUES', {}):
