@@ -51,6 +51,7 @@ def record(conn, predictions):
                    'pick': p.get('pick'), 'confidence_label': p.get('confidence_label'),
                    'confidence': p.get('confidence'),
                    'odds': p.get('iddaa_odds', {}), 'news': p.get('factors', {}).get('news'),
+                   'no_news': p.get('no_news_markets'),
                    'blend_settings': p.get('blend'), 'extra_markets': p.get('extra_markets', {})}
         rows.append((str(p['id']), p['league'], p['kickoff'], at.isoformat(), version, data_version, parameters, json.dumps(payload)))
     conn.executemany('INSERT INTO prediction_snapshots(match_id,league,kickoff,captured_at,model_version,data_version,parameters,payload) '
@@ -77,6 +78,7 @@ def report(conn):
     rows = conn.execute('SELECT s.*,m.home_goals,m.away_goals,m.kickoff AS actual_kickoff '
                         'FROM prediction_snapshots s JOIN matches m ON m.id=s.match_id WHERE m.completed=1').fetchall()
     samples = {k: [] for k in ('model', 'blend', 'market')}
+    news_pairs = {'with_news': [], 'without_news': []}
     market_scores = {}
     versions = set()
     recommendation_groups = {}
@@ -106,6 +108,14 @@ def report(conn):
         elif 'confidence_label' not in payload:
             legacy += 1
         actual = 0 if hg > ag else 1 if hg == ag else 2
+        no_news = payload.get('no_news') or {}
+        with_news = payload.get('model') or {}
+        if all(isinstance(v.get(k), (int, float)) for v in (with_news, no_news)
+               for k in ('1', 'X', '2')):
+            for key, values in (('with_news', with_news), ('without_news', no_news)):
+                news_pairs[key].append({'day': r['kickoff'][:10],
+                                        'probs': [values[k] for k in ('1', 'X', '2')],
+                                        'actual': actual})
         # Aynı maç örnekleminde üç varyantın karşılaştırması.
         if all(payload[variant].get(k) is not None for variant in samples for k in ('1', 'X', '2')):
             for variant in samples:
@@ -122,6 +132,9 @@ def report(conn):
             'variants': {v: {'metrics': metrics(s), 'calibration': calibration(s)} for v, s in samples.items()},
             'markets': {k: {'n': v['n'], 'brier': round(v['brier_sum'] / v['n'], 4)} for k, v in market_scores.items()},
             'recommendations': {'groups': recommendation_rows(recommendation_groups), 'legacy_without_confidence': legacy},
+            'news_ab': {'scope': 'paired_prematch', 'with_news': metrics(news_pairs['with_news']),
+                        'without_news': metrics(news_pairs['without_news']),
+                        'comparable_matches': len(news_pairs['with_news'])},
             'stored': conn.execute('SELECT COUNT(*) n FROM prediction_snapshots').fetchone()['n']}
 
 
