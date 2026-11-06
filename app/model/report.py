@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 from ..config import LEAGUES, is_cup
 from ..db import get_meta, init_db, session, set_meta
-from . import coupon_history, snapshots
+from . import coupon_history, snapshots, calibration as calibration_model
 from .engine import LeagueModel, _load, walkforward_samples
 from .ratings import Elo, Strengths
 
@@ -98,7 +98,13 @@ def build(min_history: int = 120) -> dict:
         except Exception:
             conn.rollback()
             prospective = {"available": False}
-    return {"prospective": prospective, "computed_at": datetime.now(timezone.utc).isoformat(), "overall": metrics(everything),
+    with session() as conn:
+        try:
+            calibration_audit = calibration_model.report(calibration_model.load(conn))
+        except Exception:
+            calibration_audit = {"available": False}
+    return {"prospective": prospective, "banko_calibration": calibration_audit,
+            "computed_at": datetime.now(timezone.utc).isoformat(), "overall": metrics(everything),
             "leagues": sorted(leagues, key=lambda r: -r["n"]), "calibration": calibration(everything),
             "trend": trend(everything), "coupons": coupons}
 
