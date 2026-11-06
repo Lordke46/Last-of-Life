@@ -208,7 +208,6 @@ def _day_entries(target: date) -> list[tuple[dict, list[dict]]]:
             observed = calibration.load(conn)
         except Exception:
             # Henüz snapshot tablosu yoksa banko için kanıtsız başarı varsayma.
-            conn.rollback()
             observed = {}
     for prediction in predictions:
         prediction["calibration_by_market"] = {
