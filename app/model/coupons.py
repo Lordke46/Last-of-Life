@@ -204,10 +204,15 @@ def _day_entries(target: date) -> list[tuple[dict, list[dict]]]:
                 predictions.append(p)
     with session() as conn:
         predictions = blend_predictions(conn, predictions)  # olasılıklar iddaa ile harmanlı
+        # Eksik/bozuk snapshot tablosu PostgreSQL işlemini abort etmesin;
+        # önceki snapshot yazımlarını koruyarak yalnız kalibrasyonu atla.
+        conn.execute("SAVEPOINT calibration_read")
         try:
             observed = calibration.load(conn)
+            conn.execute("RELEASE SAVEPOINT calibration_read")
         except Exception:
-            # Henüz snapshot tablosu yoksa banko için kanıtsız başarı varsayma.
+            conn.execute("ROLLBACK TO SAVEPOINT calibration_read")
+            conn.execute("RELEASE SAVEPOINT calibration_read")
             observed = {}
     for prediction in predictions:
         prediction["calibration_by_market"] = {
