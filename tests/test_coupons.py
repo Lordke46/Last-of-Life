@@ -17,7 +17,9 @@ from app.model.coupons import (_choices, _coupon, select_banko, select_banko_alt
 
 def pred(mid, markets, kickoff="2026-10-17T14:00Z", league="eng.1"):
     return {"id": mid, "league": league, "kickoff": kickoff, "home": f"H{mid}", "away": f"A{mid}",
-            "data_n":20, "markets": {m: {"p": p, "suggested": s, "fair": round(1 / p, 2)} for m, (p, s) in markets.items()}}
+            "data_n":20, "markets": {m: {"p": p, "suggested": s, "fair": round(1 / p, 2)} for m, (p, s) in markets.items()},
+            # Test fixtures have synthetic *verified* calibration; production never invents it.
+            "calibration_by_market": {m: {"p": p, "n": 100, "applied": True} for m, (p, _) in markets.items()}}
 
 
 def entry(mid, markets, iddaa=None, **kw):
@@ -51,6 +53,24 @@ class BankoTest(unittest.TestCase):
         self.assertEqual([p['id'] for p in picks],[1,2])
         self.assertTrue(all(1.4<=p['odds']<=2.3 and p['odds_source']=='iddaa' for p in picks))
         self.assertNotIn('1X',[p['market'] for p in picks])
+
+    def test_banko_rejects_negative_value_even_with_high_probability(self):
+        entries = [entry(i, {"1": (.65, 1.40)}) for i in (1, 2, 3)]
+        self.assertEqual(select_banko(entries), [])
+
+    def test_banko_rejects_uncalibrated_estimates(self):
+        entries = [entry(i, {"1": (.75, 1.65)}) for i in (1, 2, 3)]
+        for prediction, _ in entries:
+            prediction["calibration_by_market"] = {}
+        entries = [(prediction, _choices(prediction, {"1": 1.65})) for prediction, _ in entries]
+        self.assertEqual(select_banko(entries), [])
+
+    def test_banko_diagnostics_explain_missing_picks(self):
+        entries = [entry(i, {"1": (.62, 1.40)}) for i in (1, 2)]
+        report = {}
+        self.assertEqual(cp._select_balanced(entries, "banko", 1, report), [])
+        self.assertGreater(report["negative_or_small_edge"], 0)
+        self.assertEqual(report["selected_coupons"], 0)
 
     def test_sparse_data_and_fake_odds_are_not_banko_candidates(self):
         entries=[entry(i,{'1':(.8,1.6)}) for i in (1,2)]
