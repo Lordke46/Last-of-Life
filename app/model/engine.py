@@ -184,9 +184,13 @@ class LeagueModel:
             if m["ts"] < now - timedelta(hours=2) or m["ts"] > now + timedelta(days=days):
                 continue
             p = self.predict(m["home"], m["away"], m["ts"])
+            # İleriye dönük haber A/B: aynı maç için yalnızca haber etkisini sıfırlayıp
+            # karşıt tahmini kaydet. Sonucu daha sonra öğrenince ikisini eşleştirebiliriz.
+            no_news = self.predict(m["home"], m["away"], m["ts"], news={}, detail=False)
             out.append({"id": m["id"], "league": self.league, "kickoff": m["kickoff"],
                         "home": m["home"], "away": m["away"], "status": m["status"],
-                        "home_logo": _logo(m["home_id"]), "away_logo": _logo(m["away_id"]), **p})
+                        "home_logo": _logo(m["home_id"]), "away_logo": _logo(m["away_id"]),
+                        "no_news_markets": {k: v["p"] for k, v in no_news["markets"].items()}, **p})
         return out
 
 
