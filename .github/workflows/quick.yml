@@ -43,3 +43,7 @@ jobs:
         env:
           PYTHONUNBUFFERED: "1"
         run: python -m app.updater --quick
+      - name: Veri bütünlüğü denetimi
+        if: always()
+        timeout-minutes: 2
+        run: python -m app.data_quality --strict
