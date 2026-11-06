@@ -233,7 +233,8 @@ class BuildCouponsTest(unittest.TestCase):
                        for league, items in predictions.items()}
         with patch.object(cp, "LEAGUES", leagues), \
              patch.object(cp.engine, "get_model", lambda league: fake_models[league]), \
-             patch.object(cp, "blend_predictions", lambda conn, items: items):
+             patch.object(cp, "blend_predictions", lambda conn, items: items), \
+             patch.object(cp.calibration, "calibrate", side_effect=lambda p, *args: {"p": p, "n": 100, "applied": True}):
             result = cp.build_coupons(target)
 
         self.assertEqual(result["matches"], 5)
