@@ -270,7 +270,7 @@ def build_coupons(target: date) -> dict:
     with session() as conn:
         constraints = load_constraints(conn)
         rows = conn.execute(
-            """SELECT e.id, e.league, e.league_name, e.country, e.kickoff, e.home, e.away,
+            """SELECT e.id, e.league, e.league_name, e.country, e.kickoff, e.home, e.away, e.updated_at,
                       o.market, o.odd
                FROM iddaa_events e LEFT JOIN iddaa_odds o ON o.event_id=e.id
                 WHERE e.is_small=1 AND e.kickoff>=? AND e.kickoff<? AND e.kickoff>? ORDER BY e.kickoff""",
@@ -282,6 +282,7 @@ def build_coupons(target: date) -> dict:
         p = grouped.setdefault(r["id"], {"id": r["id"], "league": r["league"], "country": r["country"],
             "league_name": r["league_name"], "kickoff": r["kickoff"],
             "home": r["home"], "away": r["away"], "iddaa_odds": {}, "small_league": True,
+            "iddaa_updated_at": r["updated_at"],
             "iddaa_min_matches": constraints.get(r["id"], {})})
         if r["market"] and r["odd"]:
             p["iddaa_odds"][r["market"]] = r["odd"]
