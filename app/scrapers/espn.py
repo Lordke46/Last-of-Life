@@ -40,13 +40,69 @@ def fetch_html(url: str, timeout: int = 25, retries: int = 3) -> str:
     raise RuntimeError(f"Boş yanıt: {url}")
 
 
+
+# ESPN'nin HTML fikstür sayfası bot korumasında boş dönebilir. Aynı ESPN
+# verisinin JSON scoreboard uç noktası yedek kaynaktır; maç ID'leri değişmez.
+API_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={start}-{end}&limit=500"
+
+
+def fetch_api_window(league: str, day: date, timeout: int = 25) -> dict[str, list[dict]]:
+    end = day + timedelta(days=6)
+    url = API_URL.format(league=league, start=day.strftime("%Y%m%d"),
+                         end=end.strftime("%Y%m%d"))
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        raw = resp.read()
+        if resp.headers.get("Content-Encoding") == "gzip":
+            raw = gzip.decompress(raw)
+        if resp.status != 200 or not raw:
+            raise RuntimeError(f"ESPN JSON HTTP {resp.status} / boş yanıt: {url}")
+    data = json.loads(raw)
+    if not isinstance(data.get("events"), list):
+        raise RuntimeError(f"ESPN JSON events alanı yok: {url}")
+    result: dict[str, list[dict]] = {}
+    for event in data["events"]:
+        competitions = event.get("competitions") or []
+        if not competitions:
+            continue
+        competitors = competitions[0].get("competitors") or []
+        typ = (event.get("status") or {}).get("type") or {}
+        normalized = {
+            "id": event["id"], "date": event.get("date"),
+            "completed": bool(typ.get("completed")),
+            "status": {"state": typ.get("state"), "detail": typ.get("shortDetail") or typ.get("name")},
+            "competitors": [
+                {"isHome": c.get("homeAway") == "home",
+                 "id": (c.get("team") or {}).get("id") or c.get("id"),
+                 "displayName": (c.get("team") or {}).get("displayName") or c.get("displayName"),
+                 "score": c.get("score")}
+                for c in competitors
+            ],
+        }
+        if normalized["date"]:
+            key = normalized["date"][:10].replace("-", "")
+            result.setdefault(key, []).append(normalized)
+    return result
+
+
 def fetch_window(league: str, day: date, **kw) -> dict[str, list[dict]]:
-    html = fetch_html(URL.format(day=day.strftime("%Y%m%d"), league=league), **kw)
-    m = _EMBED.search(html)
-    if not m:
-        raise RuntimeError(f"ESPN sayfa yapısı değişmiş olabilir: {league} {day}")
-    data = json.loads(m.group(1))
-    return data.get("page", {}).get("content", {}).get("events", {}) or {}
+    try:
+        html = fetch_html(URL.format(day=day.strftime("%Y%m%d"), league=league), **kw)
+        m = _EMBED.search(html)
+        if not m:
+            raise RuntimeError("HTML içerisinde ESPN fikstür verisi yok")
+        data = json.loads(m.group(1))
+        events = data.get("page", {}).get("content", {}).get("events")
+        if not isinstance(events, dict):
+            raise RuntimeError("HTML fikstür events alanı yok")
+        return events
+    except Exception as html_error:
+        try:
+            return fetch_api_window(league, day, timeout=kw.get("timeout", 25))
+        except Exception as api_error:
+            raise RuntimeError(
+                f"ESPN HTML ve JSON erişimi başarısız: HTML={html_error}; JSON={api_error}"
+            ) from api_error
 
 
 def parse_event(ev: dict, league: str) -> dict | None:
@@ -57,7 +113,7 @@ def parse_event(ev: dict, league: str) -> dict | None:
         return None
     status = ev.get("status") or {}
     detail = status.get("detail") or ""
-    completed = bool(ev.get("completed")) and status.get("state") == "post" and detail in ("FT", "AET", "FT-Pens")
+    completed = bool(ev.get("completed")) and status.get("state") == "post" and detail in ("FT", "AET", "FT-Pens", "Final", "STATUS_FINAL")
     return {
         "id": str(ev["id"]),
         "league": league,
@@ -144,16 +200,15 @@ def sync_league(conn, league: str, progress=None, strict=False) -> int:
     """Ligi kaldığı yerden günceller. Dönen değer: işlenen maç sayısı."""
     today = date.today()
     end = today + timedelta(days=FIXTURE_DAYS_AHEAD)
-    count = backfill_league(conn, league, progress, strict=strict)
-    done = get_meta(conn, f"espn_done_{league}")
-    if done is None:
-        set_meta(conn, f"espn_from_{league}", HISTORY_START.isoformat())
-    day = max(HISTORY_START, date.fromisoformat(done)) if done else HISTORY_START
-    # kaldığı yeri kaydet (yarıda kesilirse baştan başlamasın); son 5 gün hep yeniden kontrol edilir
+    # Günlük cron geçmiş sezonları tekrar taramaz. Tarihsel backfill ayrı bakım işidir.
+    # Son 7 gün tekrar taranarak geciken skor/düzeltmeler yakalanır.
+    count = 0
+    day = today - timedelta(days=7)
+    # Son 7 gün ve ileri fikstür her çalışmada tazelenir.
     count += _walk(conn, league, day, end, progress,
                    lambda d: set_meta(conn, f"espn_done_{league}",
                                       min(d, today - timedelta(days=5)).isoformat()), strict=strict)
-    # Son 5 günü her seferinde yeniden kontrol et (ertelenen/yeni biten maçlar)
+    # Bilgi amaçlı son başarılı kontrol tarihini kaydet.
     set_meta(conn, f"espn_done_{league}", (today - timedelta(days=5)).isoformat())
     return count
 
