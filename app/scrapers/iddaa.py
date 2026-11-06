@@ -337,9 +337,13 @@ def small_league_key(country: str, competition: str) -> str:
     return f"small:{slug(country)}:{slug(competition)}"
 
 
+# Benzer isim / yakın başlama saatinden yanlış maç eşleşmesini önle.
+MATCH_AMBIGUITY_GAP = 0.03
+
+
 def match_event(event: dict, fixtures: list[dict]) -> tuple[dict | None, float]:
-    kickoff = datetime.fromisoformat(event["kickoff"])
-    best, best_score = None, 0.0
+    kickoff = datetime.fromisoformat(event["kickoff"].replace("Z", "+00:00"))
+    candidates = []
     for fixture in fixtures:
         if fixture["league"] != event["league"]:
             continue
@@ -352,9 +356,14 @@ def match_event(event: dict, fixtures: list[dict]) -> tuple[dict | None, float]:
         if min(home_score, away_score) < 0.72 or (home_score + away_score) / 2 < 0.84:
             continue
         score = 0.45 * home_score + 0.45 * away_score + 0.10 * (1 - hours / 6)
-        if score > best_score:
-            best, best_score = fixture, score
-    return best, round(best_score, 3)
+        candidates.append((score, fixture))
+    candidates.sort(key=lambda pair: pair[0], reverse=True)
+    if not candidates:
+        return None, 0.0
+    # İki farklı maç eşit derecede uyuyorsa oranları hiçbirine bağlama.
+    if len(candidates) > 1 and candidates[0][0] - candidates[1][0] < MATCH_AMBIGUITY_GAP:
+        return None, 0.0
+    return candidates[0][1], round(candidates[0][0], 3)
 
 
 def enrich_events(raw_events: list[dict], budget_seconds: float = 20) -> dict:
@@ -436,11 +445,22 @@ def sync_odds(conn, progress=None, retries: int = 3) -> dict:
         pairs.append((event, fixture, score))
         if fixture and score > best_for_fixture.get(fixture["id"], (0.0, ""))[0]:
             best_for_fixture[fixture["id"]] = (score, event["id"])
+    # Aynı ESPN maçına neredeyse eşit puanla birden çok bülten etkinliği
+    # bağlanıyorsa yanlış oran seçmek yerine hepsini eşleşmemiş bırak.
+    competing = {}
+    for event, fixture, score in pairs:
+        if fixture:
+            competing.setdefault(fixture["id"], []).append((score, event["id"]))
+    ambiguous_ids = {mid for mid, choices in competing.items()
+                     if len(choices) > 1
+                     and sorted((s for s, _ in choices), reverse=True)[0]
+                     - sorted((s for s, _ in choices), reverse=True)[1] < MATCH_AMBIGUITY_GAP}
     matched = odds_count = 0
     event_rows, odds_rows = [], []
     log_rows = []  # maç öncesi oranlar ileriye dönük kayda (odds_log) da yazılır
     for event, fixture, score in pairs:
-        if fixture and best_for_fixture[fixture["id"]][1] != event["id"]:
+        if fixture and (fixture["id"] in ambiguous_ids
+                        or best_for_fixture[fixture["id"]][1] != event["id"]):
             fixture, score = None, 0.0
         match_id = fixture["id"] if fixture else None
         event.update(match_id=match_id, updated_at=now, is_small=int(event["league"].startswith("small:")))
@@ -469,6 +489,7 @@ def sync_odds(conn, progress=None, retries: int = 3) -> dict:
     stats = {"bulletin_events": len(raw_events), "supported_events": len(events),
              "small_league_events": sum(e["league"].startswith("small:") for e in events),
              "matched": matched, "odds": odds_count,
+             "ambiguous_fixtures": len(ambiguous_ids),
              "rate": round(matched / max(1, sum(not e['league'].startswith('small:') for e in events)), 3),
              "unmatched_main": sum(not e['league'].startswith('small:') for e in events)-matched,
              "markets_received": sum(len(e.get('m', [])) for e in raw_events), **detail_stats}

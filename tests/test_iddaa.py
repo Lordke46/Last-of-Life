@@ -58,6 +58,17 @@ class IddaaScraperTests(unittest.TestCase):
         self.assertEqual(matched["id"], "espn-1")
         self.assertGreater(score, 0.95)
 
+    def test_ambiguous_similar_fixtures_do_not_match(self):
+        event = {"league": "eng.1", "home": "Man City", "away": "Wolves",
+                 "kickoff": "2026-10-17T14:00:00+00:00"}
+        fixtures = [
+            {"id": "first", "league": "eng.1", "home": "Man City",
+             "away": "Wolves", "kickoff": "2026-10-17T14:00Z"},
+            {"id": "second", "league": "eng.1", "home": "Man City",
+             "away": "Wolves", "kickoff": "2026-10-17T14:10Z"},
+        ]
+        self.assertEqual(match_event(event, fixtures), (None, 0.0))
+
     def test_extra_bulletin_markets_use_verified_market_ids(self):
         raw = {"i": 123, "ci": 584, "d": 1791220000, "hn": "Fenerbahçe", "an": "Beşiktaş", "m": [
             {"t": 2, "st": 88, "s": 1, "o": [{"no": 1, "odd": 2.1}, {"no": 2, "odd": 2.8}, {"no": 3, "odd": 3.2}]},
@@ -112,8 +123,9 @@ class SyncOddsTests(unittest.TestCase):
         with patch.object(iddaa, "fetch_json", return_value=payload), db.session() as conn:
             stats = iddaa.sync_odds(conn)
             odds = iddaa.odds_for_matches(conn, ["espn-1"])
-        self.assertEqual(stats["matched"], 1)
-        self.assertEqual(odds["espn-1"]["odds"]["1"], 1.45)  # kopya etkinliğin oranı karışmaz
+        self.assertEqual(stats["matched"], 0)
+        self.assertEqual(stats["ambiguous_fixtures"], 1)
+        self.assertEqual(odds, {})  # birden çok eşdeğer kaynağı sessizce seçme
 
     def test_unreachable_iddaa_raises_and_keeps_tables_readable(self):
         from unittest.mock import patch
