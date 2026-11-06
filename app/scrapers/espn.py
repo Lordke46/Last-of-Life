@@ -116,6 +116,11 @@ def parse_event(ev: dict, league: str) -> dict | None:
     status = ev.get("status") or {}
     detail = status.get("detail") or ""
     completed = bool(ev.get("completed")) and status.get("state") == "post" and detail in ("FT", "AET", "FT-Pens", "Final", "STATUS_FINAL")
+    # Bitmiş statüsü tek başına yeterli değil: eksik skor verisi, 0-0 gibi
+    # yanlış bir kesin sonuç olarak modele veya sonuçlandırmaya girmesin.
+    hg, ag = _goals(home.get("score")), _goals(away.get("score"))
+    if completed and (hg is None or ag is None or hg < 0 or ag < 0):
+        completed = False
     return {
         "id": str(ev["id"]),
         "league": league,
@@ -124,8 +129,8 @@ def parse_event(ev: dict, league: str) -> dict | None:
         "away": away.get("displayName"),
         "home_id": str(home.get("id")),
         "away_id": str(away.get("id")),
-        "home_goals": _goals(home.get("score")) if completed else None,
-        "away_goals": _goals(away.get("score")) if completed else None,
+        "home_goals": hg if completed else None,
+        "away_goals": ag if completed else None,
         "completed": 1 if completed else 0,
         "status": detail or status.get("state"),
     }
