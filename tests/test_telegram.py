@@ -66,6 +66,24 @@ class MessageTest(unittest.TestCase):
         self.assertIn("BANKO", text)
         self.assertNotIn("SÜRPRİZ", text)
 
+    def test_banko_message_explains_probability_and_price(self):
+        p = pick(1, "1", odds=1.8, p=.7)
+        p.update(model_probability=.74, market_probability=.64, calibration_n=53,
+                 calibration_applied=True, data_n=17, value=.26)
+        text = tg.format_coupon_message("2026-10-17", [coupon("banko", [p])])
+        self.assertIn("model %74", text)
+        self.assertIn("piyasa %64", text)
+        self.assertIn("kalibrasyon 53", text)
+        self.assertIn("değer %+26.0", text)
+
+    def test_only_surprise_sends_explicit_no_bank_statement(self):
+        text = tg.format_coupon_message(
+            "2026-10-17", [coupon("surprise", [pick(1, "2")])],
+            banko_note="Yeterli kanıt bulunamadı.",
+        )
+        self.assertIn("Banko paylaşılmadı", text)
+        self.assertIn("Yeterli kanıt", text)
+
     def test_settle_waits_for_unfinished_then_voids_after_timeout(self):
         c = coupon("banko", [pick(1, "1"), pick(2, "1")])
         results = {"1": {"completed": 1, "home_goals": 2, "away_goals": 0}}
