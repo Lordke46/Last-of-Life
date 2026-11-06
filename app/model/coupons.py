@@ -33,10 +33,34 @@ SURPRISE_PICKS, SURPRISE_POOL, SURPRISE_ALTERNATIVES = (3, 4), 14, 3
 SURPRISE_MARKETS = SUPPORTED_MARKETS
 SELECTION_POLICY = 'balanced_v2'
 
+MAX_COUPON_ODDS_AGE = timedelta(hours=2)
+
+
+def _odds_fresh(prediction: dict) -> bool:
+    """Kupon için yalnız son 2 saat içinde yenilenmiş bülten kabul edilir.
+
+    Test/elle kurulan prediction'larda iddaa kaynak alanı yoktur. Gerçek
+    blend_predictions çıktısında iddaa_event_id ve iddaa_updated_at bulunur.
+    """
+    if "iddaa_event_id" not in prediction:
+        return True
+    stamp = prediction.get("iddaa_updated_at")
+    if not stamp:
+        return False
+    try:
+        when = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        return now - MAX_COUPON_ODDS_AGE <= when <= now + timedelta(minutes=5)
+    except (TypeError, ValueError):
+        return False
+
+
 
 def _choices(prediction: dict, iddaa_odds: dict) -> list[dict]:
     """Bir maçın seçilebilir pazarları; oran = iddaa varsa iddaa, yoksa Claude oranı."""
     out = []
+    if iddaa_odds and not _odds_fresh(prediction):
+        return out  # bayat/kimliği belirsiz fiyatla otomatik kupon yok
     if prediction.get("small_league") and devig([iddaa_odds.get(k) for k in ("1", "X", "2")]) is None:
         return out
     available = {**prediction.get("markets", {}), **prediction.get("extra_markets", {})}
