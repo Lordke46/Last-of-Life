@@ -186,11 +186,18 @@ class LeagueModel:
             p = self.predict(m["home"], m["away"], m["ts"])
             # İleriye dönük haber A/B: aynı maç için yalnızca haber etkisini sıfırlayıp
             # karşıt tahmini kaydet. Sonucu daha sonra öğrenince ikisini eşleştirebiliriz.
-            no_news = self.predict(m["home"], m["away"], m["ts"], news={}, detail=False)
+            effect = p["factors"]["news"]
+            if effect["home_log"] or effect["away_log"]:
+                no_news_markets = self.predict(
+                    m["home"], m["away"], m["ts"], news={}, detail=False
+                )["markets"]
+            else:
+                # Haber katkısı zaten sıfırsa aynı ağır skor matrisini tekrar kurma.
+                no_news_markets = p["markets"]
             out.append({"id": m["id"], "league": self.league, "kickoff": m["kickoff"],
                         "home": m["home"], "away": m["away"], "status": m["status"],
                         "home_logo": _logo(m["home_id"]), "away_logo": _logo(m["away_id"]),
-                        "no_news_markets": {k: v["p"] for k, v in no_news["markets"].items()}, **p})
+                        "no_news_markets": {k: v["p"] for k, v in no_news_markets.items()}, **p})
         return out
 
 
