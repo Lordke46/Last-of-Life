@@ -43,13 +43,13 @@ def fetch_html(url: str, timeout: int = 25, retries: int = 3) -> str:
 
 # ESPN'nin HTML fikstür sayfası bot korumasında boş dönebilir. Aynı ESPN
 # verisinin JSON scoreboard uç noktası yedek kaynaktır; maç ID'leri değişmez.
-API_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={start}-{end}&limit=500"
+API_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={day}"
 
 
 def fetch_api_window(league: str, day: date, timeout: int = 25) -> dict[str, list[dict]]:
-    end = day + timedelta(days=6)
-    url = API_URL.format(league=league, start=day.strftime("%Y%m%d"),
-                         end=end.strftime("%Y%m%d"))
+    # ESPN 2026'dan beri tarihler arası sorgulara HTTP 400 verebiliyor.
+    # Scoreboard uç noktası tek günü destekler; bir haftalık veri varsayılmaz.
+    url = API_URL.format(league=league, day=day.strftime("%Y%m%d"))
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         raw = resp.read()
@@ -86,23 +86,25 @@ def fetch_api_window(league: str, day: date, timeout: int = 25) -> dict[str, lis
 
 
 def fetch_window(league: str, day: date, **kw) -> dict[str, list[dict]]:
+    # JSON tek günlük endpoint ana kaynaktır. HTML bot korumasından boş dönebildiği
+    # için her sorguda önce HTML'yi beklemek gereksiz gecikme ve hata üretir.
     try:
-        html = fetch_html(URL.format(day=day.strftime("%Y%m%d"), league=league), **kw)
-        m = _EMBED.search(html)
-        if not m:
-            raise RuntimeError("HTML içerisinde ESPN fikstür verisi yok")
-        data = json.loads(m.group(1))
-        events = data.get("page", {}).get("content", {}).get("events")
-        if not isinstance(events, dict):
-            raise RuntimeError("HTML fikstür events alanı yok")
-        return events
-    except Exception as html_error:
+        return fetch_api_window(league, day, timeout=kw.get("timeout", 25))
+    except Exception as api_error:
         try:
-            return fetch_api_window(league, day, timeout=kw.get("timeout", 25))
-        except Exception as api_error:
+            html = fetch_html(URL.format(day=day.strftime("%Y%m%d"), league=league), **kw)
+            m = _EMBED.search(html)
+            if not m:
+                raise RuntimeError("HTML içerisinde ESPN fikstür verisi yok")
+            data = json.loads(m.group(1))
+            events = data.get("page", {}).get("content", {}).get("events")
+            if not isinstance(events, dict):
+                raise RuntimeError("HTML fikstür events alanı yok")
+            return events
+        except Exception as html_error:
             raise RuntimeError(
-                f"ESPN HTML ve JSON erişimi başarısız: HTML={html_error}; JSON={api_error}"
-            ) from api_error
+                f"ESPN JSON ve HTML erişimi başarısız: JSON={api_error}; HTML={html_error}"
+            ) from html_error
 
 
 def parse_event(ev: dict, league: str) -> dict | None:
@@ -164,11 +166,9 @@ def _walk(conn, league: str, day: date, end: date, progress=None, checkpoint=Non
                 if parsed:
                     upsert(conn, parsed)
                     count += 1
-        days = sorted(date(int(k[:4]), int(k[4:6]), int(k[6:])) for k in window.keys())
-        if days and days[-1] > day:
-            day = days[-1]  # son gün eksik gelmiş olabilir, oradan devam et
-        else:
-            day += timedelta(days=1 if any(window.values()) else 3)
+        # JSON API tek günü döndürür. Maç olmayan günler dahil, hiçbir
+        # tarihi atlamadan ilerle (eski +3 gün davranışı fikstür kaçırıyordu).
+        day += timedelta(days=1)
         if checkpoint:
             checkpoint(day)
         conn.commit()
@@ -220,12 +220,12 @@ def sync_recent(conn, league: str, days_back: int = 3, max_requests: int = 2, pr
     istek sayısı sınırlı, deneme/zaman aşımı kısadır; tam geçmiş `sync_league` ile (cron) çekilir.
     """
     today = date.today()
-    day = today - timedelta(days=days_back)
+    # Günlük endpoint kullanıldığı için son iki günü kontrol et. Daha eski
+    # düzeltmeler üç saatlik tam taramada (son 7 gün) yakalanır.
+    days = [today - timedelta(days=offset) for offset in range(max_requests)]
     count = 0
     ok = False
-    for _ in range(max_requests):
-        if day > today + timedelta(days=1):
-            break
+    for day in days:
         if progress:
             progress(f"{league}: {day.isoformat()} çevresi çekiliyor")
         try:
@@ -235,7 +235,6 @@ def sync_recent(conn, league: str, days_back: int = 3, max_requests: int = 2, pr
                 raise RuntimeError(f"{league}: {day} alınamadı: {exc}") from exc
             if progress:
                 progress(f"{league}: {day} alınamadı ({exc})")
-            day += timedelta(days=3)
             continue
         ok = True
         for events in window.values():
@@ -245,6 +244,5 @@ def sync_recent(conn, league: str, days_back: int = 3, max_requests: int = 2, pr
                     upsert(conn, parsed)
                     count += 1
         conn.commit()
-        days = sorted(date(int(k[:4]), int(k[4:6]), int(k[6:])) for k in window.keys())
-        day = days[-1] if days and days[-1] > day else day + timedelta(days=3)
+        # Tek günlük scoreboard çağrısında ileri gün çıkarımı yapılmaz.
     return count, ok
