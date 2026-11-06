@@ -102,14 +102,17 @@ def _label(market: str) -> str:
 
 def _compact_coupon(coupon: dict) -> dict:
     """Veritabanında saklanacak (sonucu değerlendirmeye yetecek) kupon özeti."""
+    fields = ("id", "league_name", "kickoff", "home", "away", "market", "odds", "p")
+    extras = ("model_probability", "market_probability", "raw_p", "calibration_n",
+              "calibration_applied", "data_n", "probability_source", "value", "news_effect")
     return {"type": coupon["type"], "total_odds": coupon["total_odds"],
             "total_probability": coupon["total_probability"],
             "coupon_id": coupon.get("coupon_id"), "published_at": coupon.get("published_at"),
-            "picks": [{k: p[k] for k in ("id", "league_name", "kickoff", "home", "away", "market", "odds", "p")}
+            "picks": [{**{k: p[k] for k in fields}, **{k: p[k] for k in extras if k in p}}
                       for p in coupon["picks"]]}
 
 
-def format_coupon_message(day: str, coupons: list[dict]) -> str:
+def format_coupon_message(day: str, coupons: list[dict], banko_note: str | None = None) -> str:
     lines = [f"🎯 <b>Günlük Kupon</b> · {_day_label(day)}"]
     for c in coupons:
         lines += ["", f"{COUPON_TITLES[c['type']]} · toplam oran <b>{c['total_odds']:.2f}</b>"
@@ -117,8 +120,24 @@ def format_coupon_message(day: str, coupons: list[dict]) -> str:
         for p in sorted(c["picks"], key=lambda x: x["kickoff"]):
             lines.append(f"• {_kickoff_tr(p['kickoff'])} {_esc(p['league_name'])} — "
                          f"{_esc(p['home'])} - {_esc(p['away'])} → <b>{_esc(_label(p['market']))}</b> "
-                         f"({p['odds']:.2f} · %{p['p'] * 100:.0f})")
-    lines += ["", "<i>İstatistiksel tahmindir, garanti değildir. Sorumlu oynayın.</i>"]
+                         f"({p['odds']:.2f} · tahmini %{p['p'] * 100:.0f})")
+            if c["type"] == "banko":
+                parts = []
+                if isinstance(p.get("model_probability"), (int, float)):
+                    parts.append(f"model %{p['model_probability']*100:.0f}")
+                if isinstance(p.get("market_probability"), (int, float)):
+                    parts.append(f"piyasa %{p['market_probability']*100:.0f}")
+                if p.get("calibration_applied"):
+                    parts.append(f"kalibrasyon {p['calibration_n']} geçmiş seçim")
+                if isinstance(p.get("data_n"), (int, float)):
+                    parts.append(f"veri ~{p['data_n']:.0f} maç")
+                if isinstance(p.get("value"), (int, float)):
+                    parts.append(f"tahmini değer %{p['value']*100:+.1f}")
+                if parts:
+                    lines.append("  ↳ " + " · ".join(parts))
+    if banko_note and not any(c["type"] == "banko" for c in coupons):
+        lines += ["", "💎 <b>Banko paylaşılmadı:</b> " + _esc(banko_note)]
+    lines += ["", "<i>Yüzdeler istatistiksel tahmindir; kalibrasyon geçmiş veriyle sınırlıdır. Garanti değildir.</i>"]
     return "\n".join(lines)
 
 
@@ -221,11 +240,34 @@ def post_daily_coupons(now: datetime, send, force: bool = False, day: date | Non
                         (key,)).fetchone():
             return "kupon: bugün zaten gönderildi"
     built = daily_coupons(target, build=build)
-    coupons = [_compact_coupon(built[k]) for k in ("banko", "surprise") if built[k]["picks"]]
+    diagnostics = built.get("banko_diagnostics") or {}
+    if diagnostics:
+        print("Banko aday elemesi: " + json.dumps(diagnostics, ensure_ascii=False), flush=True)
+    coupons = []
+    for kind in ("banko", "surprise"):
+        published = built[kind]
+        if not published["picks"]:
+            continue
+        # Dondurulmuş tahminin değerlerini ASLA canlı başka bir seçimle değiştirme.
+        # Sadece aynı maç/pazar, oran ve yüzde ise açıklama alanlarını tamamla.
+        current = built.get("current_" + kind) or {}
+        live = {(str(p["id"]), p["market"]): p for p in current.get("picks", [])}
+        copy = {**published, "picks": []}
+        for p in published["picks"]:
+            old = dict(p)
+            candidate = live.get((str(p["id"]), p["market"]))
+            if (candidate and abs(candidate["odds"] - p["odds"]) < 0.001
+                    and abs(candidate["p"] - p["p"]) < 0.0001):
+                old.update({k: candidate[k] for k in ("model_probability", "market_probability",
+                            "raw_p", "calibration_n", "calibration_applied", "data_n",
+                            "probability_source", "value", "news_effect") if k in candidate})
+            copy["picks"].append(old)
+        coupons.append(_compact_coupon(copy))
     if not coupons:
         return "kupon: uygun kupon yok"
+    note = "Yeterli kalibre edilmiş, pozitif tahmini değerli 2 maç bulunamadı."
     sent = _post_once(key, "coupon", now, json.dumps(coupons, ensure_ascii=False),
-                      format_coupon_message(key, coupons), send)
+                      format_coupon_message(key, coupons, banko_note=note), send)
     return "kupon: gönderildi" if sent else "kupon: başka çalıştırma gönderiyor/gönderdi"
 
 
