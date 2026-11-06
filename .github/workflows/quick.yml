@@ -1,34 +1,45 @@
 name: Hızlı güncelle
 
-# Hafif artımlı güncelleme (iddaa oranları + ESPN son günler): ~2 dk. Tam güncelleme update.yml'de ayrıdır.
-# Sağlık kontrolü başarısız olursa health.yml bunu workflow_dispatch ile de tetikler.
+# Son maçlar ve oranları artımlı günceller. Ağır veri güncellemeyle aynı
+# concurrency grubunu kullanarak ortak veritabanında çakışmayı önler.
 on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
-  group: quick-update
+  group: data-update
   cancel-in-progress: false
 
 jobs:
   quick:
     runs-on: ubuntu-latest
     timeout-minutes: 8
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
+      - name: Üretim veritabanı bağlantısını doğrula
+        shell: bash
+        run: |
+          if [[ -z "$DATABASE_URL" ]]; then
+            echo "::error::DATABASE_URL secret tanımlı değil; yerel SQLite'a yazmak yerine durduruldu"
+            exit 1
+          fi
       - run: pip install -r requirements.txt
       - name: İleri şema uyumluluğu
         run: python scripts/ensure_schema.py
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          REQUIRE_POSTGRES: "1"
       - name: Hızlı güncelle
         timeout-minutes: 5
         env:
           PYTHONUNBUFFERED: "1"
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python -m app.updater --quick
