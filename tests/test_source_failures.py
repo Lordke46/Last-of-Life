@@ -36,6 +36,33 @@ class StrictSourceTests(unittest.TestCase):
             with self.assertRaises(RuntimeError), db.session() as conn:
                 espn.sync_recent(conn, "eng.1", strict=True)
 
+
+    def test_scheduled_sync_does_not_revisit_2021(self):
+        from datetime import timedelta
+        today = date.today()
+        seen = []
+        with patch.object(espn, "fetch_window", side_effect=lambda league, day, **kw: (seen.append(day) or {})), \
+                patch.object(espn, "REQUEST_DELAY_SEC", 0), \
+                patch.object(espn.time, "sleep"), db.session() as conn:
+            count = espn.sync_league(conn, "eng.1", strict=True)
+        self.assertEqual(count, 0)
+        self.assertTrue(seen)
+        self.assertGreaterEqual(min(seen), today - timedelta(days=7))
+        self.assertLess(len(seen), 20)
+
+    def test_espn_html_failure_uses_json_fallback(self):
+        with patch.object(espn, "fetch_html", side_effect=RuntimeError("empty HTML")), \
+                patch.object(espn, "fetch_api_window", return_value={"20261106": []}) as fallback:
+            self.assertEqual(espn.fetch_window("eng.1", date(2026, 11, 6)),
+                             {"20261106": []})
+            fallback.assert_called_once()
+
+    def test_espn_both_sources_fail_visibly(self):
+        with patch.object(espn, "fetch_html", side_effect=RuntimeError("empty HTML")), \
+                patch.object(espn, "fetch_api_window", side_effect=RuntimeError("JSON offline")):
+            with self.assertRaisesRegex(RuntimeError, "HTML ve JSON"):
+                espn.fetch_window("eng.1", date(2026, 11, 6))
+
     def test_tff_previous_week_failure_is_not_complete_success(self):
         with patch.object(tff, "fetch_week", side_effect=[{"week": 2, "matches": []}, RuntimeError("offline")]):
             with self.assertRaises(RuntimeError), db.session() as conn:
