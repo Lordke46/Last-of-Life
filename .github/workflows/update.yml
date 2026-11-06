@@ -48,7 +48,7 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: python -m app.updater ${{ github.event_name == 'workflow_dispatch' && !inputs.news && '--no-news' || '' }}
       - name: Veri bütünlüğü denetimi
-        if: always()
+        if: ${{ always() && env.DATABASE_URL != '' }}
         timeout-minutes: 2
         run: python -m app.data_quality --strict
       - name: Model karnesini yenile
