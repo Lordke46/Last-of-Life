@@ -73,6 +73,7 @@ def record_safely(conn, predictions):
 
 def report(conn):
     from .report import metrics, calibration
+    from .performance import report as real_odds_performance
     from .blend import GROUPS
     from .settlement import outcome
     rows = conn.execute('SELECT s.*,m.home_goals,m.away_goals,m.kickoff AS actual_kickoff '
@@ -128,7 +129,8 @@ def report(conn):
             score = market_scores.setdefault(market, {'n': 0, 'brier_sum': 0.0})
             score['n'] += 1
             score['brier_sum'] += (probability - int(won)) ** 2
-    return {'scope': 'first_published_prematch', 'versions': sorted(versions),
+    return {'real_odds_picks': real_odds_performance(conn),
+            'scope': 'first_published_prematch', 'versions': sorted(versions),
             'variants': {v: {'metrics': metrics(s), 'calibration': calibration(s)} for v, s in samples.items()},
             'markets': {k: {'n': v['n'], 'brier': round(v['brier_sum'] / v['n'], 4)} for k, v in market_scores.items()},
             'recommendations': {'groups': recommendation_rows(recommendation_groups), 'legacy_without_confidence': legacy},
