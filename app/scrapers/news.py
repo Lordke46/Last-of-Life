@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 from ..config import LEAGUES, NEWS_LOOKBACK_DAYS, REQUEST_DELAY_SEC, USER_AGENT, is_cup
+from ..db import get_meta, set_meta
 from ..news_intel import classify
 from ..sentiment import analyze
 
@@ -121,16 +122,32 @@ def fetch_team_news(team: str, lang: str, limit: int = 25) -> list[dict]:
 def sync_news(conn, days_ahead: int = 10, progress=None, budget_sec: float | None = 900, strict=False) -> int:
     """Önümüzdeki maçları olan takımlar için haberleri günceller."""
     now = datetime.now(timezone.utc)
+    # Bir takım için en yakın maç bilinir; 24 saat içindeki maça 1 saat,
+    # daha uzaktakine 6 saat haber TTL'i uygulanır.
     rows = conn.execute(
-        "SELECT DISTINCT league, home AS team FROM matches WHERE completed=0 AND kickoff BETWEEN ? AND ? "
-        "UNION SELECT DISTINCT league, away FROM matches WHERE completed=0 AND kickoff BETWEEN ? AND ?",
+        "SELECT league,team,MIN(kickoff) AS nearest FROM ("
+        "SELECT league,home AS team,kickoff FROM matches WHERE completed=0 AND kickoff BETWEEN ? AND ? "
+        "UNION ALL SELECT league,away AS team,kickoff FROM matches WHERE completed=0 AND kickoff BETWEEN ? AND ?"
+        ") q GROUP BY league,team ORDER BY nearest",
         ((now - timedelta(hours=3)).isoformat(), (now + timedelta(days=days_ahead)).isoformat()) * 2,
     ).fetchall()
     # Kupa takımlarının haberi kendi liglerinden gelir (kupa modeli onları birleştirir); ayrıca çekilmez
     rows = [r for r in rows if not is_cup(r["league"])]
-    total = 0
+    total = skipped = fetched = 0
     started = time.monotonic()
     for i, r in enumerate(rows, 1):
+        key = "news_poll_" + hashlib.sha1(
+            (r["league"] + "|" + r["team"]).encode("utf-8")).hexdigest()[:24]
+        previous = get_meta(conn, key)
+        near = datetime.fromisoformat(r["nearest"].replace("Z", "+00:00"))
+        ttl = timedelta(hours=1 if near < now + timedelta(hours=24) else 6)
+        if previous:
+            try:
+                if now - datetime.fromisoformat(previous.replace("Z", "+00:00")) < ttl:
+                    skipped += 1
+                    continue
+            except ValueError:
+                pass
         if budget_sec and time.monotonic() - started > budget_sec:
             if strict:
                 raise RuntimeError(f"Haber süre sınırı doldu ({i - 1}/{len(rows)})")
@@ -158,8 +175,12 @@ def sync_news(conn, days_ahead: int = 10, progress=None, budget_sec: float | Non
                  n["sentiment"], n["injury"], n["category"], n["reason"], now.isoformat()),
             )
         total += len(items)
+        fetched += 1
+        set_meta(conn, key, now.isoformat())
         conn.commit()
         time.sleep(REQUEST_DELAY_SEC)
+    if progress:
+        progress(f"Haberler: {fetched} takım sorgulandı, {skipped} önbellekten atlandı, {total} haber işlendi")
     # Eski haberleri temizle
     conn.execute("DELETE FROM news WHERE published < ?", ((now - timedelta(days=30)).isoformat(),))
     return total

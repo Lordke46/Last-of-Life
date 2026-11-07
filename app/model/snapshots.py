@@ -71,6 +71,32 @@ def record_safely(conn, predictions):
         set_meta(conn, 'prediction_capture_error', type(exc).__name__)
 
 
+def news_impact_report(paired):
+    """Aynı maçta haberli-habersiz 1X2 tahmin farkının güven aralığı.
+
+    Delta = Brier(haberli) - Brier(habersiz). Negatif haberlerin lehine.
+    Olasılık tahmininin iyileştiğine dair işaret için >=100 *etkilenen*
+    eşleşmiş maç ve sıfırı dışlayan belirsizlik aralığı gerekir.
+    """
+    n = len(paired)
+    if not n:
+        return {"n": 0, "verdict": "insufficient_data", "min_samples": 100}
+    diffs = []
+    for news, control, actual in paired:
+        score = lambda probs: sum((p - (i == actual)) ** 2 for i, p in enumerate(probs))
+        diffs.append(score(news) - score(control))
+    avg = sum(diffs) / n
+    variance = sum((x - avg) ** 2 for x in diffs) / (n - 1) if n > 1 else 0
+    radius = 1.96 * math.sqrt(variance / n)
+    low, high = avg - radius, avg + radius
+    verdict = ("insufficient_data" if n < 100 else
+               "news_improves" if high < 0 else
+               "news_hurts" if low > 0 else "inconclusive")
+    return {"n": n, "delta_brier": round(avg, 5),
+            "interval95": [round(low, 5), round(high, 5)],
+            "verdict": verdict, "min_samples": 100}
+
+
 def report(conn):
     from .report import metrics, calibration
     from .performance import report as real_odds_performance
@@ -80,6 +106,7 @@ def report(conn):
                         'FROM prediction_snapshots s JOIN matches m ON m.id=s.match_id WHERE m.completed=1').fetchall()
     samples = {k: [] for k in ('model', 'blend', 'market')}
     news_pairs = {'with_news': [], 'without_news': []}
+    affected_pairs = []
     market_scores = {}
     versions = set()
     recommendation_groups = {}
@@ -117,6 +144,12 @@ def report(conn):
                 news_pairs[key].append({'day': r['kickoff'][:10],
                                         'probs': [values[k] for k in ('1', 'X', '2')],
                                         'actual': actual})
+            # Haberin etkisi olmayan maçlar (iki tahmin bire bir aynı)
+            # etki hesabını sulandırmasın; sadece gerçek karşıt tahmin farkı.
+            actual_news = [with_news[k] for k in ('1', 'X', '2')]
+            baseline = [no_news[k] for k in ('1', 'X', '2')]
+            if any(abs(a - b) > 1e-6 for a, b in zip(actual_news, baseline)):
+                affected_pairs.append((actual_news, baseline, actual))
         # Aynı maç örnekleminde üç varyantın karşılaştırması.
         if all(payload[variant].get(k) is not None for variant in samples for k in ('1', 'X', '2')):
             for variant in samples:
@@ -136,7 +169,9 @@ def report(conn):
             'recommendations': {'groups': recommendation_rows(recommendation_groups), 'legacy_without_confidence': legacy},
             'news_ab': {'scope': 'paired_prematch', 'with_news': metrics(news_pairs['with_news']),
                         'without_news': metrics(news_pairs['without_news']),
-                        'comparable_matches': len(news_pairs['with_news'])},
+                        'comparable_matches': len(news_pairs['with_news']),
+                        'affected_only': news_impact_report(affected_pairs),
+                        'unaffected_matches': len(news_pairs['with_news']) - len(affected_pairs)},
             'stored': conn.execute('SELECT COUNT(*) n FROM prediction_snapshots').fetchone()['n']}
 
 
