@@ -13,6 +13,7 @@
     const rows = (tools.by_probability || []).map(item => {
       const move = item.movement;
       const signals = [item.model_market_disagree ? 'Model ve piyasa ayrışıyor' : '',
+        !item.actionable ? 'İnceleme amaçlı; öneri değil' : '',
         !item.meets_probability_threshold ? 'Öneri eşiği altında' : '',
         move ? `İlk kayıt ${number(move.first_observed)} → ${number(move.current)} (${move.change_pct > 0 ? '+' : ''}${move.change_pct}%)` : ''].filter(Boolean);
       return `<tr><td class="l" data-field="choice"><b>${esc(headline(item.market))}</b>${signals.length ? `<small class="comparison-signals">${signals.map(esc).join(' · ')}</small>` : ''}</td>
@@ -25,7 +26,7 @@
     return `<section class="card recommendation-comparison" aria-label="Seçenek karşılaştırması"><h3>Bu maçta hangi seçenek?</h3><p class="muted small">${tools.preferred_odds.map(number).join('–')} gerçek oran aralığında tutma ihtimaline göre ilk üç seçenek.</p>
       ${(tools.warnings || []).map(warning => `<p class="muted small">${esc(warning)}</p>`).join('')}
       ${rows ? `<table><thead><tr><th class="l">Seçenek</th><th>Tahmini şans</th><th>İddaa / adil</th><th>Fiyat farkı</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="muted">Bu oran aralığında karşılaştırılabilecek gerçek fiyatlı seçenek yok.</p>'}
-      ${value && value.estimated_value > 0 ? `<p class="muted small">En yüksek tahmini fiyat avantajı: ${esc(headline(value.market))} (${(value.estimated_value * 100).toFixed(1)}%). Fiyat avantajı, tutma ihtimalinden ayrı hesaplanır.</p>` : ''}
+      ${value && value.actionable && value.estimated_value > 0 ? `<p class="muted small">En yüksek tahmini fiyat avantajı: ${esc(headline(value.market))} (${(value.estimated_value * 100).toFixed(1)}%). Fiyat avantajı, tutma ihtimalinden ayrı hesaplanır.</p>` : ''}
       <p class="muted small">${esc(tools.note)}</p></section>`;
   }
   return {render};

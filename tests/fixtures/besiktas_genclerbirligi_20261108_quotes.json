@@ -1,0 +1,66 @@
+{
+  "source_url": "https://sportsbookv2.iddaa.com/sportsbook/event/3279014",
+  "captured_at": "2026-11-08T16:17:29.976829+00:00",
+  "scope": "Observed source excerpt; not a historical model prediction, not a permanent current price.",
+  "event": {
+    "i": 3279014,
+    "ci": 584,
+    "d": 1794160800,
+    "hn": "Beşiktaş",
+    "an": "Gençlerbirliği",
+    "m": [
+      {
+        "i": 87355695,
+        "t": 2,
+        "st": 101,
+        "v": 1003488875,
+        "s": 1,
+        "mbc": 1,
+        "sov": "3.5",
+        "o": [
+          {
+            "no": 1,
+            "odd": 1.8,
+            "wodd": 1.74,
+            "n": "Alt"
+          },
+          {
+            "no": 2,
+            "odd": 1.68,
+            "wodd": 1.63,
+            "n": "Üst"
+          }
+        ]
+      },
+      {
+        "i": 87355711,
+        "t": 2,
+        "st": 100,
+        "v": 1003488857,
+        "s": 1,
+        "mbc": 1,
+        "sov": "-2",
+        "o": [
+          {
+            "no": 1,
+            "odd": 2.0,
+            "wodd": 1.94,
+            "n": "1"
+          },
+          {
+            "no": 2,
+            "odd": 3.85,
+            "wodd": 3.73,
+            "n": "0"
+          },
+          {
+            "no": 3,
+            "odd": 2.24,
+            "wodd": 2.17,
+            "n": "2"
+          }
+        ]
+      }
+    ]
+  }
+}

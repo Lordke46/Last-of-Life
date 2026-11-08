@@ -44,7 +44,7 @@ def _next_kickoff(value):
 def data_version() -> str:
     """Önbellek anahtarı: veri güncellemeleri (ESPN + iddaa) değişince önbellek kendiliğinden geçersiz olur."""
     with session() as conn:
-        return "|".join(str(get_meta(conn, k) or "") for k in ("last_updated_at", "last_update", "iddaa_last_update", "update_data_version"))
+        return "|".join(str(get_meta(conn, k) or "") for k in ("last_updated_at", "last_update", "iddaa_last_update", "iddaa_last_error", "update_data_version"))
 
 
 def cached(key: tuple, build):

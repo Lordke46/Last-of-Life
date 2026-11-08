@@ -11,6 +11,11 @@ from app import db, updater, ops, live, backtest_jobs
 from app.model import snapshots, coupons, small_leagues, engine
 
 
+def settled_report(conn,start):
+    with patch.object(snapshots,'now',return_value=start+timedelta(hours=4)):
+        return snapshots.report(conn)
+
+
 class DatabaseCase(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -112,6 +117,9 @@ class DatabaseCase(unittest.TestCase):
     def test_small_coupon_filters_started_next_day_and_missing_group(self):
         target = datetime.now(coupons.TZ).date() + timedelta(days=1)
         begin = datetime.combine(target, datetime.min.time(), coupons.TZ).astimezone(timezone.utc)
+        from app import quote_provenance as Q
+        observed_at=datetime.now(timezone.utc).isoformat()
+        verified=[]
         with db.session() as c:
             for mid, kickoff, odds in [('past', begin-timedelta(hours=1), [1.3, 6, 9]),
                                        ('next', begin+timedelta(days=1), [1.3, 6, 9]),
@@ -122,6 +130,10 @@ class DatabaseCase(unittest.TestCase):
                           (mid,'small:test:league',1,kickoff.isoformat(),'A','B',datetime.now(timezone.utc).isoformat()))
                 for market, odd in zip(('1','X','2'), odds):
                     c.execute('INSERT INTO iddaa_odds(event_id,market,odd) VALUES(?,?,?)',(mid,market,odd))
+                verified.append({'id':mid,'quote_metadata':{market:{'identity':[mid,market],'odd':odd,
+                    'cache_status':'network_no_cache_evidence','quote_observed_at':observed_at}
+                    for market,odd in zip(('1','X','2'),odds)}})
+            Q.save(c,verified,observed_at,{})
         with patch.object(coupons, 'LEAGUES', {}):
             result = coupons.build_coupons(target)
         self.assertEqual({p['id'] for p in result['small_leagues']['picks']}, {'good1','good2'})
@@ -144,7 +156,7 @@ class DatabaseCase(unittest.TestCase):
             self.assertEqual(json.loads(saved['payload'])['blend']['1'], .6)
             self.assertTrue(saved['model_version'])
             self.assertTrue(saved['parameters'])
-            forward = snapshots.report(c)
+            forward = settled_report(c, start)
             self.assertEqual(forward['variants']['blend']['metrics']['n'],1)
             self.assertAlmostEqual(forward['variants']['blend']['metrics']['brier'],.245, places=3)
             pred['id']='started';pred['kickoff']=(start-timedelta(hours=2)).isoformat()
@@ -168,20 +180,20 @@ class DatabaseCase(unittest.TestCase):
                 snapshots.record(c,[pred])
                 pred['pick']={'market':'2','p':.99}  # Sonraki öneri ilk kaydı değiştiremez.
                 snapshots.record(c,[pred])
-            rows = snapshots.report(c)['recommendations']['groups']
+            rows = settled_report(c, start)['recommendations']['groups']
             high = next(r for r in rows if r['league']=='eng.1')
             self.assertEqual((high['n'],high['won'],high['hit_rate']), (2,1,.5))
             self.assertAlmostEqual(high['predicted_probability'],.85)
             self.assertLess(high['interval95'][0], .5)
             self.assertGreater(high['interval95'][1], .5)
             c.execute("UPDATE prediction_snapshots SET model_version='other-version' WHERE match_id='lost'")
-            self.assertEqual(len(snapshots.report(c)['recommendations']['groups']),3)
+            self.assertEqual(len(settled_report(c, start)['recommendations']['groups']),3)
             c.execute("UPDATE prediction_snapshots SET payload=? WHERE match_id='other'",
                       (json.dumps({'model':{}, 'blend':{}, 'market':{}}),))
-            self.assertEqual(snapshots.report(c)['recommendations']['legacy_without_confidence'],1)
+            self.assertEqual(settled_report(c, start)['recommendations']['legacy_without_confidence'],1)
             # Başlangıç sonrasında alınmış tahmin ölçüme giremez.
             c.execute('UPDATE prediction_snapshots SET captured_at=?', ((start+timedelta(minutes=1)).isoformat(),))
-            self.assertEqual(snapshots.report(c)['recommendations']['groups'],[])
+            self.assertEqual(settled_report(c, start)['recommendations']['groups'],[])
 
     def test_schema_versions_unique(self):
         files = list((Path(__file__).resolve().parent.parent/'supabase/migrations').glob('*.sql'))

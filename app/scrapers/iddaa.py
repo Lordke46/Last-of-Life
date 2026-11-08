@@ -17,7 +17,7 @@ from difflib import SequenceMatcher
 
 from .. import odds_log
 from ..config import USER_AGENT
-from .. import odds_history
+from .. import odds_history, quote_provenance
 from ..db import set_meta, get_meta
 
 EVENTS_URL = "https://sportsbookv2.iddaa.com/sportsbook/events?st=1&type=0&version=0"
@@ -220,6 +220,7 @@ def fetch_json(url: str = EVENTS_URL, timeout: int = 25, retries: int = 3) -> di
         "User-Agent": USER_AGENT,
         "Accept": "application/json",
         "Accept-Encoding": "gzip",
+        "Cache-Control": "no-cache",
         "Origin": "https://www.iddaa.com",
         "Referer": "https://www.iddaa.com/program/futbol",
     }
@@ -232,6 +233,12 @@ def fetch_json(url: str = EVENTS_URL, timeout: int = 25, retries: int = 3) -> di
                 if resp.headers.get("Content-Encoding") == "gzip":
                     raw = gzip.decompress(raw)
                 data = json.loads(raw.decode("utf-8"))
+                age = resp.headers.get('Age')
+                cache = ' '.join(str(resp.headers.get(k) or '') for k in ('X-Cache','CF-Cache-Status')).upper()
+                cached = (age is not None and age != '0') or 'HIT' in cache or 'STALE' in cache
+                data['_transport'] = {'quote_observed_at':datetime.now(timezone.utc).isoformat(),
+                    'cache_status':'shared_cache' if cached else 'network_no_cache_evidence',
+                    'cache_age_seconds':age, 'quote_source':url}
             if not data.get("isSuccess"):
                 raise RuntimeError(data.get("message") or "iddaa başarısız yanıt verdi")
             return data
@@ -298,6 +305,22 @@ def _market_odds(markets: list[dict]) -> dict[str, float]:
     return odds
 
 
+def _quote_metadata(raw):
+    out = {}
+    for market in raw.get('m') or []:
+        transport = market.get('_transport') or raw.get('_transport') or {}
+        for selection in market.get('o') or []:
+            for name, odd in _market_odds([{**market, 'o':[selection]}]).items():
+                identity = [str(raw.get('i')), market.get('i'), market.get('t'), market.get('st'),
+                            str(market.get('sov', '')), selection.get('i'), selection.get('no')]
+                out[name] = {**transport, 'odd':odd, 'identity':identity, 'market_id':market.get('i'),
+                    'selection_id':selection.get('i'), 'selection_number':selection.get('no'),
+                    'market_type':market.get('t'), 'market_subtype':market.get('st'),
+                    'line':market.get('sov'), 'provider_price_updated_at':None,
+                    'cache_status':transport.get('cache_status','unknown')}
+    return out
+
+
 def parse_event(raw: dict) -> dict | None:
     if raw.get("sid", 1) != 1 or not raw.get("d") or not raw.get("hn") or not raw.get("an"):
         return None  # takım adı olmayan kayıtlar maç değil (turnuva/şampiyon bahsi)
@@ -326,6 +349,7 @@ def parse_event(raw: dict) -> dict | None:
         "away": raw.get("an") or "",
         "odds": _market_odds(raw.get("m") or []),
         "min_matches": constraints,
+        "quote_metadata": _quote_metadata(raw),
     }
 
 
@@ -372,7 +396,10 @@ def enrich_events(raw_events: list[dict], budget_seconds: float = 20) -> dict:
     # Büyük bültenlerde hızlı güncelleme süresi sınırlı kalır; kapsam yanıt istatistiğinde görünür.
     candidates = candidates[:400]
     def fetch(event):
-        data = fetch_json(f"https://sportsbookv2.iddaa.com/sportsbook/event/{event['i']}", timeout=6, retries=1)['data']
+        response = fetch_json(f"https://sportsbookv2.iddaa.com/sportsbook/event/{event['i']}", timeout=6, retries=1)
+        data = response['data']
+        for market in data.get('m') or []:
+            market['_transport'] = response.get('_transport', {})
         if str(data.get('i')) != str(event['i']) or not isinstance(data.get('m'), list):
             raise ValueError('Maç detay kimliği uyuşmuyor')
         return data
@@ -403,13 +430,15 @@ def enrich_events(raw_events: list[dict], budget_seconds: float = 20) -> dict:
             'detail_failed': failed, 'detail_skipped': len(raw_events)-loaded-failed}
 
 
-def sync_odds(conn, progress=None, retries: int = 3) -> dict:
+def _sync_odds(conn, progress=None, retries: int = 3) -> dict:
     payload = fetch_json(retries=retries)
     if payload.get('data', {}).get('isdiff'):
         raise RuntimeError('Tam bülten yerine artımlı yanıt alındı; önceki oranlar korundu')
     raw_events = payload["data"].get("events", [])
     if not isinstance(raw_events, list) or not raw_events:
         raise RuntimeError('Boş/geçersiz bülten; önceki oranlar korundu')
+    for event in raw_events:
+        event['_transport'] = payload.get('_transport', {})
     detail_stats = enrich_events(raw_events)
     try:
         catalog = fetch_competitions()
@@ -483,6 +512,7 @@ def sync_odds(conn, progress=None, retries: int = 3) -> dict:
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", event_rows)
     conn.executemany("INSERT INTO iddaa_odds(event_id, market, odd) VALUES (?, ?, ?)", odds_rows)
     bulletin_archive.record(conn, events)
+    quote_provenance.save(conn, events, now, quote_provenance.load(conn))
     odds_history.record_snapshot(conn, events, now)
     odds_history.prune(conn)
 
@@ -517,10 +547,12 @@ def odds_for_matches(conn, match_ids) -> dict[str, dict]:
             WHERE e.match_id IN ({marks})""", match_ids).fetchall()
     out: dict[str, dict] = {}
     constraints = load_constraints(conn)
+    provenance = quote_provenance.load(conn,[r['event_id'] for r in rows])
     for row in rows:
         entry = out.setdefault(row["match_id"], {
             "event_id": row["event_id"], "updated_at": row["updated_at"], "odds": {},
-            "min_matches": constraints.get(row['event_id'], {})})
+            "min_matches": constraints.get(row['event_id'], {}),
+            "quote_provenance": quote_provenance.for_event(provenance, row["event_id"])})
         entry["odds"][row["market"]] = row["odd"]
     return out
 
@@ -530,3 +562,11 @@ def load_constraints(conn):
         return json.loads(get_meta(conn, 'iddaa_market_constraints') or '{}')
     except (TypeError, ValueError):
         return {}
+
+
+def sync_odds(conn, progress=None, retries: int = 3):
+    try:
+        return _sync_odds(conn, progress, retries)
+    except Exception as exc:
+        quote_provenance.failed(conn, exc)
+        raise

@@ -16,6 +16,8 @@ from . import engine, calibration
 from . import predict as P
 from .blend import blend_predictions, devig
 from .settlement import SUPPORTED_MARKETS
+from .. import quote_provenance
+from . import decision_quality
 from ..scrapers.iddaa import load_constraints
 
 TZ = ZoneInfo("Europe/Istanbul")
@@ -54,6 +56,8 @@ def _odds_fresh(prediction: dict) -> bool:
     Test/elle kurulan prediction'larda iddaa kaynak alanı yoktur. Gerçek
     blend_predictions çıktısında iddaa_event_id ve iddaa_updated_at bulunur.
     """
+    if prediction.get('quote_provenance') is not None:
+        return any(quote_provenance.fresh(prediction,key) for key in prediction.get('iddaa_odds',{}))
     if "iddaa_event_id" not in prediction:
         return True
     stamp = prediction.get("iddaa_updated_at")
@@ -89,6 +93,10 @@ def _choices(prediction: dict, iddaa_odds: dict) -> list[dict]:
         elif not claude or claude < 1.01:
             continue
         odds, source = (round(theirs, 2), "iddaa") if theirs and theirs >= 1.01 else (claude, "claude")
+        if prediction.get('quote_provenance') is not None and decision_quality.reasons(prediction,market):
+            continue
+        if item.get('disagreement_review_required') and not ((prediction.get('calibration_by_market') or {}).get(market) or {}).get('applied'):
+            continue
         calib = (prediction.get("calibration_by_market") or {}).get(market) or {}
         calibrated = bool(calib.get("applied") and calib.get("n", 0) >= calibration.MIN_SAMPLES)
         out.append({"market": market, "p": calib["p"] if calibrated else item["p"], "raw_p": item["p"],
@@ -154,10 +162,17 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
               "calibration_insufficient": 0, "calibration_best_n": 0,
               "calibration_min_samples": calibration.MIN_SAMPLES,
               "selection_policy": SELECTION_POLICY if banko else "balanced_v2",
-              "eligible_matches": 0, "combinations_rejected": 0, "valid_combinations": 0}
+              "eligible_matches": 0, "combinations_rejected": 0, "valid_combinations": 0, "quality_rejected":0, "not_prematch":0}
     for prediction, choices in entries:
         mid = str(prediction.get('id',''))
         if not mid or mid in seen or prediction.get('small_league') or str(prediction.get('league','')).startswith('small:'):
+            continue
+        if prediction.get('completed') or prediction.get('result_only'):
+            counts['not_prematch'] += 1
+            continue
+        kickoff = quote_provenance.timestamp(prediction.get('kickoff'))
+        if kickoff and kickoff <= datetime.now(timezone.utc):
+            counts['not_prematch'] += 1
             continue
         n = prediction.get('data_n', 0)
         if (prediction.get('data_integrity') or {}).get('history_complete') is False or n < (BANKO_MIN_DATA_N if banko else 8):
@@ -186,6 +201,10 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
                 counts["calibration_insufficient"] += 1
                 counts["calibration_best_n"] = max(counts["calibration_best_n"], int(choice.get("calibration_n") or 0))
             conf = P.confidence(choice['p'], n)
+            if not choice.get('calibration_applied'):
+                conf['confidence']=min(conf['confidence'],.69)
+                conf['confidence_label']=P.confidence_label(conf['confidence'])
+                conf['confidence_reason']+='; kalibrasyon kanıtı yetersiz'
             candidates.append({**choice, **conf, 'value': round(choice['p']*choice['odds']-1,4)})
         if candidates:
             counts["eligible_matches"] += 1
@@ -300,6 +319,7 @@ def build_coupons(target: date) -> dict:
     entries = _day_entries(target)
     with session() as conn:
         constraints = load_constraints(conn)
+        provenance = quote_provenance.load(conn)
         rows = conn.execute(
             """SELECT e.id, e.league, e.league_name, e.country, e.kickoff, e.home, e.away, e.updated_at,
                       o.market, o.odd
@@ -314,6 +334,7 @@ def build_coupons(target: date) -> dict:
             "league_name": r["league_name"], "kickoff": r["kickoff"],
             "home": r["home"], "away": r["away"], "iddaa_odds": {}, "small_league": True,
             "iddaa_updated_at": r["updated_at"],
+            "quote_provenance": quote_provenance.for_event(provenance,r["id"]),
             "iddaa_min_matches": constraints.get(r["id"], {})})
         if r["market"] and r["odd"]:
             p["iddaa_odds"][r["market"]] = r["odd"]

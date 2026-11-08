@@ -11,7 +11,7 @@ import math
 from ..config import MODEL
 from ..scrapers import iddaa
 from . import predict as P
-from . import extra_markets
+from . import extra_markets, decision_quality
 
 # Marjı temizlenen pazar grupları: grup adı -> pazarlar (olasılıkları toplamı 1)
 GROUPS = {
@@ -82,6 +82,11 @@ def blend_markets(model_markets: dict, iddaa_odds: dict, weight: float | None = 
     for m, item in model_markets.items():
         out[m] = ({**P.odds(final[m]), "model_p": model_p[m], "market_p": round(market_p[m], 4)}
                   if m in market_p else {**item, "model_p": model_p[m], "market_p": None})
+    for m,item in out.items():
+        group = next((name for name,keys in GROUPS.items() if m in keys and name in groups),None)
+        if m in ('1X','12','X2') and '1x2' in groups:group='1x2'
+        book = sum(1/iddaa_odds[k] for k in GROUPS[group]) if group else None
+        item.update(decision_quality.comparison(item,group=group,book=book))
     return out, list(groups)
 
 
@@ -90,6 +95,15 @@ def blend_prediction(pred: dict, iddaa_odds: dict, weight: float | None = None) 
     Gerçek oran varsa, harman grubu eksik olsa da öneri mevcut pazarlardan yeniden seçilir."""
     w = _clamp(MODEL["market_weight"] if weight is None else weight)
     markets, groups = blend_markets(pred["markets"], iddaa_odds, w)
+    # Even at market_weight=0 the market benchmark remains auditable.
+    benchmarks = implied_groups(iddaa_odds)
+    markets = {k:dict(v) for k,v in markets.items()}
+    for group,probs in benchmarks.items():
+        for key,q in probs.items():
+            if key not in markets:continue
+            item=markets[key]
+            item.setdefault('model_p',pred['markets'][key]['p']);item['market_p']=round(q,4)
+            item.update(decision_quality.comparison(item,group=group,book=sum(1/iddaa_odds[k] for k in GROUPS[group])))
     out = {**pred, "markets": markets, "blend": {"applied": bool(groups), "weight": w, "groups": groups}}
     if "pick" in pred:
         out["pick"] = P.best_pick(markets, actual_odds=iddaa_odds)
@@ -102,11 +116,36 @@ def blend_prediction(pred: dict, iddaa_odds: dict, weight: float | None = None) 
     return out
 
 
+def calibration_stats(conn):
+    from . import calibration
+    conn.execute('SAVEPOINT decision_calibration')
+    try:
+        observed = calibration.load(conn)
+        conn.execute('RELEASE SAVEPOINT decision_calibration')
+    except Exception:
+        conn.execute('ROLLBACK TO SAVEPOINT decision_calibration')
+        conn.execute('RELEASE SAVEPOINT decision_calibration')
+        observed = {}
+    return observed
+
+
+def assess_prediction(prediction, observed):
+    from . import calibration
+    out=dict(prediction)
+    out['calibration_by_market']={k:calibration.calibrate(v['p'],out.get('league',''),k,observed)
+        for k,v in out.get('markets',{}).items() if isinstance(v.get('p'),(int,float))}
+    out=decision_quality.apply(out)
+    if out.get('pick'):
+        out['pick']['min_matches']=out.get('iddaa_min_matches',{}).get(out['pick']['market'],1)
+    return out
+
+
 def blend_predictions(conn, items: list[dict]) -> list[dict]:
     """Tahmin listesine eşleşen güncel iddaa oranlarını ekler (`iddaa_odds`, `iddaa_event_id`,
     `iddaa_updated_at`) ve `markets` içeren her tahmini harmanlar. Sıra korunur."""
     if not items:
         return items
+    observed = calibration_stats(conn)
     by_match = iddaa.odds_for_matches(conn, [item["id"] for item in items])
     out = []
     for item in items:
@@ -122,7 +161,9 @@ def blend_predictions(conn, items: list[dict]) -> list[dict]:
                 blended["lambda_home"], blended["lambda_away"], odds)
         blended["iddaa_event_id"] = source["event_id"] if source else None
         blended["iddaa_updated_at"] = source["updated_at"] if source else None
-        out.append(blended)
+        blended['quote_provenance'] = source.get('quote_provenance') if source else None
+        # A current response may contain old retained prices after a failed update.
+        out.append(assess_prediction(blended,observed))
     return out
 
 
