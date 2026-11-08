@@ -59,7 +59,10 @@ test("aynı maçtan iki seçim uyarılır; olasılıkça çelişenler 0 sayılı
   assert.equal(ok.sameMatch.length, 1);
   assert.deepEqual(ok.sameMatch[0].markets, ["1", "Ü2.5"]);
   assert.equal(ok.sameMatch[0].impossible, false);
-  assert.ok(Math.abs(ok.totalProbability - 0.5 * 0.55) < 1e-12); // çarpım (bağımsız varsayım)
+  assert.equal(ok.totalProbability, null); // Aynı maçın pazarları bağımsız değildir.
+  assert.equal(ok.ev, null);
+  assert.equal(ok.expectedValue, null);
+  assert.equal(ok.correlated, true);
 
   const bad = C.summarize([pick(A, "1"), pick(A, "X"), pick(B, "2")], 10, 0);
   assert.equal(bad.impossible, true);

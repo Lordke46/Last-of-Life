@@ -19,3 +19,15 @@ test('confidence report shows real results, sample size, version and escaped lea
   assert.match(html,/3 eski maç/);
   assert.match(vm.runInContext('confidenceReportHtml({groups:[]})',context),/Henüz sonuçlanan/);
 });
+
+test('price timing and matched market benchmark are labelled without promising profit',()=>{
+ const context=vm.createContext({state:{leagues:[]},esc:s=>String(s),mrPct:p=>(p*100).toFixed(1)+'%'});
+ vm.runInContext(fs.readFileSync('static/model-report.js','utf8'),context);
+ context.sample={summary:{n:2},segments:{odds_band:[{key:'1.40–1.79',n:2,hit_rate:.5,realized_roi:-.2}]},
+  price_tracking:{n:1,mean_price_difference:.1},market_comparison:{n:1,blend_brier:.1,market_brier:.2,reliable:false}};
+ const html=vm.runInContext('realOddsPerformanceHtml(sample)',context);
+ assert.match(html,/10.0%/);
+ assert.match(html,/Marj düzeltilmemiş/);
+ assert.match(html,/başarı sonucu çıkarılamaz/);
+ assert.match(html,/1.40–1.79/);
+});

@@ -250,6 +250,7 @@ function renderSmallMatch(m) {
       ${Simple.pickBlock(m)}
       ${m.pick ? `<div class="hero-foot">${Slip.button(m, m.pick.market)}</div>` : ""}
     </div>
+    ${window.RecommendationTools?.render(m, Slip.button, Simple.headline) || ""}
     ${detail("Detaylar", odds.length ? `<table><tr><th class="l">Seçenek</th><th>iddaa oranı</th><th></th></tr>${marketRows}</table>` : `<p class="muted">Bu maç için oran verisi yok.</p>`)}`;
 }
 
@@ -318,6 +319,7 @@ async function openMatch(id, competitionId = null) {
       <div class="team">${img(m.away_logo)}<h3>${esc(m.away)}</h3></div>
     </div>
     <div class="card hero">${hero}</div>
+    ${window.RecommendationTools?.render(m, Slip.button, Simple.headline) || ""}
     ${detail("Detaylar", `<h4>Diğer seçenekler</h4>${markets}<h4>Takımlar</h4>${compare}<div id="matchInsights"></div><h4>Haberler</h4>${news}`)}`;
   $("#modal").classList.remove("hidden");
   renderOddsHistory(m);

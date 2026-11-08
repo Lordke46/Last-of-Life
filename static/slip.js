@@ -171,7 +171,7 @@
       const name = `<b>${esc(g.home)} – ${esc(g.away)}</b>`, mk = g.markets.map(esc).join(" + ");
       out.push(g.impossible
         ? `<div class="slip-warn bad">⚠ ${name}: ${mk} aynı anda gerçekleşemez; bu kupon kazanamaz (tutma ihtimali %0 sayıldı).</div>`
-        : `<div class="slip-warn">⚠ ${name} maçından ${g.markets.length} seçim var (${mk}). Aynı maçın seçimleri birbirine bağlıdır; tutma ihtimali bağımsız varsayımıyla hesaplanan yaklaşık bir değerdir ve bahis sitelerinde bu birleşim kabul edilmeyebilir.</div>`);
+        : `<div class="slip-warn">⚠ ${name} maçından ${g.markets.length} seçim var (${mk}). Aynı maçın seçimleri birbirine bağlıdır; ortak olasılık modeli olmadığı için toplam tutma şansı ve beklenen değer hesaplanmaz. Çarpılan oranlar resmi birleşik teklif değildir.</div>`);
     }
     if (s.rows.some((r)=>C.isExperimental(r.market))) out.push(`<div class="slip-warn">Deneysel seçimler kalibre edilmemiştir. İlk yarı, İY/MS, korner ve kart sonuçları tam maç skorundan çıkarılmaz; maç bittikten sonra doğruladığınız sonucu seçebilirsiniz.</div>`);
     if (s.finishedCount) out.push(`<div class="slip-warn info">${s.finishedCount} seçimin maçı tamamlandı; son skorlar yukarıda gösteriliyor.</div>`);
@@ -188,7 +188,7 @@
   }
   function summaryHtml(s) {
     return `<p role="status"><b>${{won: "Kazandı", lost: "Kaybetti", pending: "Bekliyor", empty: "Boş"}[s.status]}</b> · Tutan: ${s.wonCount} · Yatan: ${s.lostCount} · Bekleyen: ${s.pendingCount} seçim · Kalan: ${s.remainingMatches} maç</p><div class="slip-stats">
-      <div><small>Toplam oran</small><b>${s.totalOdds.toFixed(2)}</b></div>
+      <div><small>${s.correlated ? "Oran çarpımı (resmi teklif değil)" : "Toplam oran"}</small><b>${s.totalOdds.toFixed(2)}</b></div>
       <div><small>${s.status === "pending" ? "İlk tahmini tutma şansı" : "Sonuç"}</small><b>${pct(s.totalProbability, s.totalProbability < 0.1 ? 1 : 0)}</b></div>
 </div>`;
   }
@@ -222,7 +222,7 @@
         <button type="button" class="btn" id="slipRefresh" ${refreshing ? "disabled" : ""}>${refreshing ? "Yenileniyor…" : "Skorları ve oranları yenile"}</button>
         <button type="button" class="btn btn-ghost" id="slipClear">Kuponu temizle</button>
       </div>
-      <p class="muted slip-note">Bilinen olasılıklar bağımsızlık varsayımıyla birleştirilir. Olasılığı hesaplanmayan bir seçim varsa toplam tutma şansı gösterilmez. Kupon bu tarayıcıda saklanır; oranlar zamanla değişebilir. Tahmindir, garanti değildir.</p>
+      <p class="muted slip-note">Farklı maçların bilinen olasılıkları bağımsızlık varsayımıyla birleştirilir. Aynı maçtan birden fazla seçimde veya olasılığı bilinmeyen seçimlerde toplam tutma şansı gösterilmez. Kupon bu tarayıcıda saklanır; oranlar zamanla değişebilir. Tahmindir, garanti değildir.</p>
     </div>`;
     window.Extras?.slipExtras(el, s, data.stake);
     if (focus !== null) { const inp = q("#slipStake"); inp.focus(); inp.setSelectionRange(focus, focus); }

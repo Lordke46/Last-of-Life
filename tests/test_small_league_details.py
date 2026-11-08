@@ -54,6 +54,8 @@ class SmallLeagueDetailsTests(unittest.TestCase):
         self.assertEqual((detail["iddaa_event_id"], detail["competition_id"]), (event_id, competition_id))
         self.assertEqual(detail["iddaa_odds"], rows[0]["iddaa_odds"])
         self.assertEqual(detail["confidence_label"], "Model güveni yok")
+        self.assertEqual(detail["recommendation_tools"]["probability_source"], "iddaa_market")
+        self.assertNotIn("recommendation_tools", rows[0])  # Günlük listeye ağır karşılaştırma eklenmez.
         self.assertTrue({"1", "X", "2", "1X", "12", "X2", "Ü1.5", "A1.5", "Ü2.5",
                          "A2.5", "Ü3.5", "A3.5", "KG Var", "KG Yok", "Ev 0.5Ü", "Dep 0.5Ü"}
                         <= set(detail["markets"]))

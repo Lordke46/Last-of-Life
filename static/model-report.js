@@ -12,6 +12,10 @@ function realOddsPerformanceHtml(r) {
   const interval = summary.interval95;
   const band = interval ? fmt(interval[0]) + "–" + fmt(interval[1]) : "—";
   const segments = r.segments || {};
+  const timing = r.price_tracking || {}, comparison = r.market_comparison || {};
+  const timingText = timing.n ? `${timing.n} seçimde ilk fiyat / maçtan önceki son saat içinde kayıtlı fiyat farkı: ${fmt(timing.mean_price_difference)}.` : "Maç öncesi son saatten karşılaştırılabilir fiyat kaydı henüz yok.";
+  const comparisonText = comparison.n ? `${comparison.n} aynı seçimde Brier: harmanlı tahmin ${comparison.blend_brier}, piyasa ${comparison.market_brier}. Düşük daha iyi.${comparison.reliable ? "" : " Örnek az; başarı sonucu çıkarılamaz."}` : "Piyasa karşılaştırması için eşleşmiş kayıt henüz yok.";
+  const bands = (segments.odds_band || []).map(x => `<tr><td>${esc(x.key)}</td><td>${x.n}</td><td>${fmt(x.hit_rate)}</td><td>${fmt(x.realized_roi)}</td></tr>`).join("");
   const rows = (segments.league || []).map((x) => `
     <tr><td class="l">${esc(state.leagues.find(l => l.id === x.key)?.name || x.key)}</td>
     <td>${x.n}</td><td>${fmt(x.hit_rate)}</td><td>${fmt(x.predicted_rate)}</td>
@@ -26,6 +30,8 @@ function realOddsPerformanceHtml(r) {
     </div>
     <p class="muted">%95 Wilson isabet aralığı: ${band}. Brier: ${summary.brier ?? "—"}.
       ${summary.reliable ? "Örnek sayısı ön eşiği geçti; sonuçlar yine belirsizlik içerir." : "30'dan az seçim: performans yorumu için erken."}</p>
+    <h4>Oran zamanlaması ve piyasa karşılaştırması</h4><p class="muted">${esc(timingText)} Marj düzeltilmemiş fiyat farkıdır; resmi kapanış oranı veya kârlılık kanıtı değildir.</p><p class="muted">${esc(comparisonText)}</p>
+    ${bands ? `<h4>Gerçek oran bandına göre sonuçlar</h4><table><tr><th>Oran</th><th>Seçim</th><th>İsabet</th><th>ROI</th></tr>${bands}</table>` : ""}
     ${rows ? `<div class="mr-scroll"><table>
       <tr><th class="l">Lig</th><th>Seçim</th><th>İsabet</th><th>Model tahmini</th><th>Gerçek ROI</th><th>Örnek</th></tr>
       ${rows}</table></div>` : "<p class='muted'>Henüz gerçek oranlı, sonuçlanan ilk tahmin yok.</p>"}

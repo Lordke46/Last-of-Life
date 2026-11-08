@@ -125,7 +125,7 @@ window.Extras = (() => {
     if (rows.length < 3) return `<div class="card slip-card"><h3>Sistem kuponu</h3><p class="muted">Sistem için en az 3 seçim ekleyin (örn. 2/3).</p></div>`;
     if (!opts.length) return `<div class="card slip-card"><h3>Sistem kuponu</h3><p class="muted">Bu seçim sayısında kombinasyon sınırı (${S.MAX_COMBOS}) aşılıyor; seçimleri azaltın.</p></div>`;
     if (!opts.some((o) => o.k === sysK)) sysK = opts[0].k;
-    const items = rows.map((r) => ({ odds: r.odds, p: r.p }));
+    const items = rows.map((r) => ({ id: r.id, odds: r.odds, p: r.p }));
     const s = S.summarizeSystem(items, sysK, stake);
     const combos = s.rows.slice(0, 50).map((c) => `<tr><td class="l">${c.idx.map((i) => i + 1).join(" + ")}</td><td><b class="iddaa-odd">${c.odds.toFixed(2)}</b></td><td>${(c.p * 100).toFixed(c.p < 0.1 ? 1 : 0)}%</td></tr>`).join("");
     return `<div class="card slip-card"><div class="row-between"><h3>Sistem kuponu</h3><label>Tip <select id="sysK">${opts.map((o) => `<option value="${o.k}"${o.k === sysK ? " selected" : ""}>${o.label} (${o.count} komb.)</option>`).join("")}</select></label></div>
@@ -144,6 +144,8 @@ window.Extras = (() => {
     let box = el.querySelector("#slipSystem");
     if (!box) { box = document.createElement("div"); box.id = "slipSystem"; el.appendChild(box); }
     const rows = summary.rows.filter((r) => r.odds);
+    box._ctx = null;
+    if(summary.correlated) {box.innerHTML='<p class="muted">Aynı maçtan bağlı seçimler var; sistem kuponu için her maçtan tek seçim kullanın.</p>';return;}
     if(rows.some((r)=>r.p === null)) {box.innerHTML='<p class="muted">Olasılığı bilinmeyen seçim var; sistem tutma olasılığı hesaplanmadı.</p>';return;}
     box.innerHTML = `<details class="detail"${sysOpen ? " open" : ""}><summary>Sistem kuponu (isteğe bağlı)</summary><div class="detail-body">${systemHtml(rows, stake)}</div></details>`;
     box.querySelector("details").addEventListener("toggle", (e) => { sysOpen = e.target.open; });

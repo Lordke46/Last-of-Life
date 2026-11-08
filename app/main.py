@@ -173,6 +173,8 @@ def match(match_id: str, competition_id: Annotated[int | None, Query(ge=1)] = No
                 "away": small["away"], "iddaa_odds": odds, "small_league": True}
             result = _small_prediction(event)
             result["league_name"] = f"{small['country']} · {small['league_name']}"
+            from .model.recommendation_tools import analyse
+            result["recommendation_tools"] = analyse(result)
             return result
     with session() as conn:
         if match_id.startswith('iddaa:'):
@@ -201,7 +203,10 @@ def match(match_id: str, competition_id: Annotated[int | None, Query(ge=1)] = No
             result = {"id": m["id"], "league": lg, "league_name": LEAGUES[lg]["name"], "kickoff": m["kickoff"],
                       "home": m["home"], "away": m["away"],
                       "home_logo": engine._logo(m["home_id"]), "away_logo": engine._logo(m["away_id"]), **p}
-            return _attach_iddaa_odds([result])[0]
+            from .model.recommendation_tools import analyse
+            result = _attach_iddaa_odds([result])[0]
+            result["recommendation_tools"] = analyse(result)
+            return result
     raise HTTPException(404, "Maç bulunamadı")
 
 

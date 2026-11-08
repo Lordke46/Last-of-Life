@@ -45,6 +45,8 @@
 
   /** items: [{odds, p}], k: kaç seçim tutmalı, stake: toplam yatırım (TL, null olabilir). */
   function summarizeSystem(items, k, stake) {
+    const ids = items.filter(i => i.id !== undefined).map(i => String(i.id));
+    if(new Set(ids).size !== ids.length || items.some(i => num(i.p) === null || i.p <= 0 || i.p > 1)) return null;
     const combos = combinations(items.length, k);
     if (!combos) return null;
     const rows = combos.map((idx) => ({
