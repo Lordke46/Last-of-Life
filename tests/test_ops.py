@@ -59,6 +59,32 @@ class OpsTests(unittest.TestCase):
             db.set_meta(conn, "iddaa_last_update", now)
         self.assertTrue(ops.health()["ok"])
 
+    def test_iddaa_stale_uses_job_finish_not_mid_job_fetch_stamp(self):
+        import json
+        from datetime import timedelta
+        now = ops.datetime.now(ops.timezone.utc)
+        fetch = (now - timedelta(minutes=80)).isoformat()
+        finished = (now - timedelta(minutes=70)).isoformat()
+        with db.session() as conn:
+            db.set_meta(conn, "last_updated_at", finished)
+            db.set_meta(conn, "iddaa_last_update", fetch)
+            db.set_meta(conn, "update_sources", json.dumps({
+                "iddaa": {"status": "success", "last_success_at": finished},
+            }))
+        report = ops.health()
+        self.assertNotIn("iddaa_stale", report["problems"])
+        self.assertGreater(report["iddaa_age_seconds"], 75 * 60)
+        self.assertTrue(report["ok"])
+
+    def test_iddaa_without_success_stamp_uses_fetch_age(self):
+        from datetime import timedelta
+        old = (ops.datetime.now(ops.timezone.utc) - timedelta(minutes=80)).isoformat()
+        with db.session() as conn:
+            db.set_meta(conn, "last_updated_at", ops.datetime.now(ops.timezone.utc).isoformat())
+            db.set_meta(conn, "iddaa_last_update", old)
+            db.set_meta(conn, "update_sources", "{}")
+        self.assertIn("iddaa_stale", ops.health()["problems"])
+
     def test_health_does_not_hide_failed_source_behind_recent_global_stamp(self):
         import json
         with db.session() as conn:
