@@ -94,8 +94,8 @@ function formDots(s) { return `<span class="formdots">${[...(s || "")].map((c) =
 function img(src) { return src ? `<img src="${esc(src)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">` : ""; }
 
 function renderLeagueChips() {
-  const chip=(label,league,on)=>`<button type="button" class="chip${on ? " active" : ""}" data-league="${league}">${label}</button>`;
-  $("#leagueChips").innerHTML=`<div class="league-group main-league-group">${chip("Tüm bülten","all",state.bulletinCategory === "all" && !state.league)}${chip("Diğer ligler","other",state.bulletinCategory === "other")}<label class="league-select">Lig filtresi <select data-league-select><option value="all">Lig filtresi yok</option>${state.leagues.map((league)=>`<option value="${esc(league.id)}" ${state.league === league.id ? "selected" : ""}>${esc(league.name)}</option>`).join("")}</select></label></div>`;
+  const chip=(label,league,on)=>`<button type="button" class="chip${on ? " active" : ""}" aria-pressed="${on}" data-league="${league}">${label}</button>`;
+  $("#leagueChips").innerHTML=`<div class="league-group main-league-group">${chip("Ana ligler","main",state.bulletinCategory === "main" && !state.league)}${chip("Tüm bülten","all",state.bulletinCategory === "all" && !state.league)}${chip("Diğer ligler","other",state.bulletinCategory === "other")}<label class="league-select">Lig filtresi <select data-league-select><option value="all">Lig filtresi yok</option>${state.leagues.map((league)=>`<option value="${esc(league.id)}" ${state.league === league.id ? "selected" : ""}>${esc(league.name)}</option>`).join("")}</select></label></div>`;
 }
 
 async function loadLeagues() {
@@ -145,9 +145,9 @@ function renderBulletinDays() {
   const quick = [0,1,2].map((offset)=>{
     const day=new Date(bulletinToday()+"T12:00:00Z"); day.setUTCDate(day.getUTCDate()+offset);
     const value=day.toISOString().slice(0,10);
-    return `<button class="chip${value === state.bulletinDay ? " active" : ""}" data-bulletin-day="${value}">${["Bugün","Yarın","Ertesi gün"][offset]}</button>`;
+    return `<button class="chip${value === state.bulletinDay ? " active" : ""}" aria-pressed="${value === state.bulletinDay}" data-bulletin-day="${value}">${["Bugün","Yarın","Ertesi gün"][offset]}</button>`;
   }).join("");
-  $("#bulletinDays").innerHTML=`<h2 class="sec-title">${state.bulletinCategory === "other" ? "Diğer ligler" : "Günün bülteni"}</h2><div class="bulletin-days"><button class="btn" data-bulletin-shift="-1" aria-label="Önceki gün">‹</button>${quick}<label>Gün <input type="date" id="bulletinDate" value="${state.bulletinDay}"></label><button class="btn" data-bulletin-shift="1" aria-label="Sonraki gün">›</button></div>`;
+  $("#bulletinDays").innerHTML=`<h2 class="sr-only">${state.bulletinCategory === "other" ? "Diğer ligler" : "Günün bülteni"}</h2><div class="bulletin-days"><button class="btn" data-bulletin-shift="-1" aria-label="Önceki gün">‹</button>${quick}<label>Gün <input type="date" id="bulletinDate" value="${state.bulletinDay}"></label><button class="btn" data-bulletin-shift="1" aria-label="Sonraki gün">›</button></div>`;
 }
 async function renderMatches() {
   const el=$("#matches"), request=++state.bulletinReq;
@@ -172,7 +172,7 @@ function drawMatchList() {
   const filters=`<div class="fav-bar match-filters">${[["high","Yüksek güven"],["live","Canlı"]].filter(([key])=>key !== "high" || (data.category !== "other" && state.matchList.some((m)=>m.pick && m.confidence != null))).map(([key,label])=>`<button class="chip${matchFilters[key] ? " active" : ""}" data-match-filter="${key}" aria-pressed="${matchFilters[key]}">${label}</button>`).join("")}</div>`;
   const groups=data.groups.map((group)=>{
     const matches=group.matches.filter(allowed);
-    return matches.length ? `<section class="bulletin-league"><h3 class="day-head">${esc(group.country)} · ${esc(group.name)} <span class="muted">${matches.length} maç</span></h3>${matches.map(matchCard).join("")}</section>` : "";
+    return matches.length ? `<section class="bulletin-league"><h3 class="day-head">${esc(group.country)} · ${esc(group.name)} <span class="league-count">${matches.length} maç</span></h3><div class="league-matches">${matches.map(matchCard).join("")}</div></section>` : "";
   }).join("");
   el.innerHTML=filters+(window.Extras ? Extras.filterButton() : "")+(groups || Ui.empty(data.total ? "Filtrelere uyan maç yok" : "Bu gün için kayıt bulunamadı", data.total ? "Yüksek güven/canlı/favori filtresini kapatın." : data.empty_reason || "Kaynak kapsamındaki başka bir gün seçin."));
   el.querySelectorAll("[data-match-filter]").forEach((button)=>button.addEventListener("click",()=>{
@@ -389,7 +389,7 @@ $("#leagueChips").addEventListener("click", (event)=>{
   const chip=event.target.closest("[data-league]"); if(!chip) return;
   resetMatchFilters();
   state.bulletinCategory=chip.dataset.league === "other" ? "other" : chip.dataset.league === "all" ? "all" : "main";
-  state.league=["all","other"].includes(chip.dataset.league) ? null : chip.dataset.league;
+  state.league=["all","other","main"].includes(chip.dataset.league) ? null : chip.dataset.league;
   renderLeagueChips();render();
 });
 
@@ -406,6 +406,19 @@ function setTab(name) {
     b.setAttribute("aria-pressed", String(on));
   });
   $("#couponSeg").classList.toggle("hidden", group !== "coupons");
+  const headings = {
+    matches: ["FUTBOL BÜLTENİ", "Maçlar ve öneriler", "Maçları incele, kuponunu oluştur."],
+    coupons: ["GÜNÜN SEÇİMLERİ", "Kupon alternatifleri", "Önerileri, oranları ve tutma olasılıklarını birlikte incele."],
+    slip: ["KİŞİSEL KUPON", "Kuponum", "Seçimlerini bir araya getir, maçların durumunu takip et."],
+    "coupon-history": ["KUPON ARŞİVİ", "Geçmiş kuponlar", "Yayımlanmış kuponları ve sonuçlarını incele."],
+    ledger: ["KUPON DEFTERİ", "Kayıtların", "Kaydettiğin kuponları ve sonuçlarını takip et."],
+    report: ["MODEL PERFORMANSI", "Tahminlerin karnesi", "Sonuçlanan tahminler, başarı oranları ve model verileri."]
+  };
+  const heading = headings[name] || headings.matches;
+  ["pageEyebrow", "pageTitle", "pageIntro"].forEach((id, i) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = heading[i];
+  });
   state.tab = name;
   document.querySelectorAll(".tab").forEach((s) => s.classList.toggle("hidden", s.id !== "tab-" + name));
 }

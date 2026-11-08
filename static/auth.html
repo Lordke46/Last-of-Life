@@ -2,15 +2,20 @@
 <html lang="tr">
 <head>
   <meta charset="utf-8">
+  <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+  <meta name="theme-color" content="#1F3D2B">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <meta name="referrer" content="no-referrer">
   <title>Giriş · İddia Oran</title>
+  <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
   <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="/static/auth.css">
+  <link rel="stylesheet" href="/static/theme.css?v=forest-v1">
+  <link rel="stylesheet" href="/static/forest.css?v=forest-v1">
+  <link rel="stylesheet" href="/static/auth.css?v=forest-v1">
 </head>
-<body>
-  <header class="topbar"><div class="brand">⚽ <a href="/"><b>İddia Oran</b></a></div></header>
+<body class="auth-page">
+  <header class="topbar"><div class="brand"><a href="/"><b>İddia Oran</b></a></div></header>
   <section class="auth">
     <form id="authForm" class="card auth-card" novalidate>
       <h2 id="authTitle">Giriş yap</h2>

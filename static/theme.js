@@ -1,10 +1,9 @@
 (() => {
   const root = document.documentElement, btn = document.getElementById("themeToggle");
-  const mq = matchMedia("(prefers-color-scheme: light)");
-  const current = () => root.dataset.theme || (mq.matches ? "light" : "dark");
+  const current = () => root.dataset.theme || "dark";
   const apply = () => {
     const light = current() === "light";
-    document.querySelector('meta[name="theme-color"]').content = light ? "#f5f7fa" : "#0b0f14";
+    document.querySelector('meta[name="theme-color"]').content = light ? "#E8DCC4" : "#1F3D2B";
     btn.setAttribute("aria-pressed", String(light));
     btn.title = light ? "Koyu temaya geç" : "Açık temaya geç";
   };
@@ -14,6 +13,5 @@
     try { localStorage.setItem("theme", next); } catch {}
     apply();
   });
-  mq.addEventListener?.("change", apply);
   apply();
 })();

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#0f1419">
+  <meta name="theme-color" content="#1F3D2B">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" type="image/png" sizes="192x192" href="/static/icons/icon-192.png">
   <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
@@ -17,36 +17,39 @@
   <link rel="stylesheet" href="/static/legal.css">
   <link rel="stylesheet" href="/static/coupon-history.css">
   <link rel="stylesheet" href="/static/slip.css">
-  <link rel="stylesheet" href="/static/theme.css">
-  <link rel="stylesheet" href="/static/simple.css">
+  <link rel="stylesheet" href="/static/theme.css?v=forest-v1">
+  <link rel="stylesheet" href="/static/simple.css?v=forest-v1">
+  <link rel="stylesheet" href="/static/forest.css?v=forest-v1">
 </head>
 <body>
   <a class="skip-link" href="#main">İçeriğe geç</a>
   <header class="topbar">
-    <div class="brand"><span class="brand-mark" aria-hidden="true">⚽</span> <b>İddia Oran</b> </div>
+    <div class="brand"><span class="brand-mark" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="4"/><path d="M4 12h16M9 3v3h6V3M9 21v-3h6v3"/><circle cx="12" cy="12" r="3"/></svg></span><span class="brand-name"><b>İddia Oran</b><small>Futbol, verilerle.</small></span> </div>
     <div class="update">
       <span id="lastUpdate" class="muted"></span>
       <span id="liveState" class="muted" role="status"></span>
-      <button id="themeToggle" class="icon-btn" type="button" aria-label="Temayı değiştir" title="Tema">◐</button>
+      <button id="themeToggle" class="icon-btn" type="button" aria-label="Temayı değiştir" title="Tema"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.9 13a9 9 0 0 1-9.9-9.9A9 9 0 1 0 20.9 13Z"/></svg></button>
       <button id="btnUpdate" class="btn hidden">Güncelle</button>
       <span id="authBox"></span>
     </div>
   </header>
   <nav class="tabs" aria-label="Ana menü">
-    <button data-tab="matches" class="active" aria-current="page"><i aria-hidden="true">⚽</i><span>Bülten</span></button>
-    <button data-tab="coupons"><i aria-hidden="true">🎫</i><span>Kupon</span> <span id="slipCount" class="badge-count hidden">0</span></button>
-    <button data-tab="report"><i aria-hidden="true">📈</i><span>Karne</span></button>
+    <button data-tab="matches" class="active" aria-current="page"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="4"/><path d="M3 9h18M8 2v4M16 2v4M8 13h2M14 13h2M8 16h2"/></svg><span>Bülten</span></button>
+    <button data-tab="coupons"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 3h16v6a3 3 0 0 0 0 6v6H4v-6a3 3 0 0 0 0-6V3Z"/><path d="M12 6v2m0 3v2m0 3v2"/></svg><span>Kuponlar</span> <span id="slipCount" class="badge-count hidden">0</span></button>
+    <button data-tab="report"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4v16h16M8 15l4-5 4 2 4-7"/></svg><span>Performans</span></button>
+    <div class="nav-note"><span class="nav-note-mark" aria-hidden="true">18+</span><p>Veriye dayalı tahminler.<br>Her zaman kendi kararın.</p></div>
   </nav>
   <div id="updateBar" class="update-bar hidden"></div>
 
   <main id="main">
+    <div class="workspace-heading"><p class="eyebrow" id="pageEyebrow">FUTBOL BÜLTENİ</p><h1 id="pageTitle">Maçlar ve öneriler</h1><p class="workspace-intro" id="pageIntro">Maçları incele, kuponunu oluştur.</p></div>
     <div id="leagueChips" class="chips"></div>
 
     <section id="tab-matches" class="tab">
       <div id="bulletinDays"></div>
       <div id="today"></div>
       <div id="oddsDrops"></div>
-      <div id="matches" class="match-list"></div>
+      <div id="matches" class="match-list" aria-live="polite"></div>
       <div id="table"></div>
     </section>
 
@@ -80,7 +83,7 @@
   </main>
 
   <div id="modal" class="modal hidden">
-    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-body" id="modalBody" role="dialog" aria-modal="true" aria-label="Maç ayrıntıları"></div>
   </div>
 
   <footer class="muted legal-footer">18+ · Tahminler garanti değildir, yatırım tavsiyesi değildir. Sorumlu oynayın.</footer>
@@ -97,10 +100,10 @@
   <script src="/static/coupon-view.js?v=bulletin-v4"></script>
   <script src="/static/coupon-share.js"></script>
   <script src="/static/update-status.js"></script>
-  <script src="/static/app.js?v=bulletin-v4"></script>
+  <script src="/static/app.js?v=forest-v1"></script>
   <script src="/static/session.js"></script>
-  <script src="/static/today.js?v=bulletin-v4"></script>
-  <script src="/static/theme.js"></script>
+  <script src="/static/today.js?v=forest-v1"></script>
+  <script src="/static/theme.js?v=forest-v1"></script>
   <script src="/static/pwa.js"></script>
   <script src="/static/coupon-history.js"></script>
   <script src="/static/model-report.js"></script>
