@@ -330,7 +330,14 @@ def start_update(request: Request):
 @app.get("/api/health")
 def health_check():
     result = ops.health()
-    return JSONResponse(result, status_code=200 if result["ok"] else 503, headers={"Cache-Control": "no-store"})
+    # 503 yalnız veritabanı kapalıyken. Veri eskiliği ok=false ile 200 döner; servis
+    # ayaktadır ve izleme işi gövdeyi okuyup uyarı verir. 200 CDN'de tutulmasın.
+    status = 200 if result.get("db") else 503
+    return JSONResponse(result, status_code=status, headers={
+        "Cache-Control": "no-store",
+        "CDN-Cache-Control": "no-store",
+        "Vercel-CDN-Cache-Control": "no-store",
+    })
 
 
 @app.get("/api/update/status")

@@ -231,7 +231,7 @@ GitHub işi adımlar başlamadan ödeme/harcama limiti nedeniyle reddedilirse, h
 
 - **Önbellek:** okuma uç noktaları süreç içinde `last_updated_at`/`iddaa_last_update` sürümüne göre önbelleğe alınır; ayrıca `Cache-Control: s-maxage + stale-while-revalidate` ile Vercel CDN'de tutulur.
 - **/api/update koruması:** IP başına dakikada 5 istek (`rate_limits` tablosu, migration `20261008120000_rate_limits.sql`) + 10 dk cooldown.
-- **/api/health:** DB erişimi, son güncelleme ve iddaa çekimi yaşı; sorun varsa 503. GitHub Actions `health.yml` 30 dakikada bir kontrol eder, başarısızsa workflow fail olur. Sunucu hataları JSON yapılandırılmış log olarak yazılır.
+- **/api/health:** DB erişimi, son güncelleme ve iddaa çekimi yaşı. Veritabanı kapalıysa 503; veri eskimesi `ok: false` ile 200 döner ve önbelleğe alınmaz. GitHub Actions `health.yml` 30 dakikada bir durum kodunu ve gövdeyi okur: taşıma hatası, veritabanı hatası ve beklenmeyen yanıt işi düşürür, yalnız veri eskimesi uyarıdır. Sunucu hataları JSON yapılandırılmış log olarak yazılır.
 - **Gizlilik:** Vercel Web Analytics ve Speed Insights çerezsiz çalışır, kişisel veri veya IP saklamaz; yalnızca anonim sayfa görüntüleme ve performans metrikleri toplanır. Script etiketleri (`/_vercel/insights/script.js`, `/_vercel/speed-insights/script.js`) şu an kaldırıldı; Vercel panelinden Analytics ve Speed Insights etkinleştirilince `static/index.html`'e eklenecek.
 
 ## Güvenilirlik ve ileriye dönük ölçüm

@@ -4,9 +4,12 @@ API anahtarı kullanılmaz: sayfa HTML'inin içine gömülü JSON (window['__esp
 okunur. Her istek, verilen tarihin çevresindeki ~1 haftalık pencereyi döndürür.
 """
 import gzip
+import http.client
 import json
 import re
+import ssl
 import time
+import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 
@@ -25,19 +28,60 @@ def _goals(value) -> int | None:
         return None
 
 
+# Kısa süreli sunucu yanıtları. 400 gibi kalıcı istemci hataları bu kümede değildir.
+_TRANSIENT_HTTP = frozenset({408, 429, 500, 502, 503, 504})
+
+
+def _transient_fetch_error(exc: BaseException) -> bool:
+    """Ağ, TLS, zaman aşımı ve kısa süreli HTTP hataları yeniden denenebilir.
+
+    Sertifika doğrulaması kapatılmaz; urlopen varsayılan bağlamıyla çağrılır.
+    """
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in _TRANSIENT_HTTP
+    return isinstance(exc, (
+        urllib.error.URLError,
+        TimeoutError,
+        ConnectionError,
+        ssl.SSLError,
+        gzip.BadGzipFile,
+        http.client.IncompleteRead,
+    ))
+
+
+def _fetch_bytes(req: urllib.request.Request, timeout: int, retries: int) -> bytes:
+    """HTTP 200 gövdesi. Geçici hatalarda sınırlı, artan beklemeyle yeniden dener.
+
+    Denemeler tükenince son hata mesajın içinde kalır. HTTP 400 gibi kalıcı
+    hatalar yeniden denenmez.
+    """
+    last_error: BaseException | None = None
+    attempts = max(1, retries)
+    for attempt in range(attempts):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                raw = resp.read()
+                if resp.headers.get("Content-Encoding") == "gzip":
+                    raw = gzip.decompress(raw)
+                if resp.status == 200 and raw:
+                    return raw
+                last_error = RuntimeError(f"HTTP {resp.status} / boş yanıt")
+        except Exception as exc:
+            if not _transient_fetch_error(exc):
+                raise
+            last_error = exc
+        if attempt + 1 < attempts:
+            time.sleep(2 * (attempt + 1))  # 2s, 4s, ... artan bekleme
+    detail = "Boş yanıt" if isinstance(last_error, RuntimeError) else last_error
+    raise RuntimeError(
+        f"ESPN isteği {attempts} denemede başarısız ({detail}): {req.full_url}"
+    ) from last_error
+
+
 def fetch_html(url: str, timeout: int = 25, retries: int = 3) -> str:
     # gzip ile sayfa ~540 KB yerine ~75 KB iner
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept-Encoding": "gzip"})
-    for attempt in range(retries):
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
-            if resp.headers.get("Content-Encoding") == "gzip":
-                raw = gzip.decompress(raw)
-            body = raw.decode("utf-8", errors="ignore")
-        if resp.status == 200 and body:
-            return body
-        time.sleep(2 * (attempt + 1))  # 202/boş gövde: kısa bekleyip tekrar dene
-    raise RuntimeError(f"Boş yanıt: {url}")
+    return _fetch_bytes(req, timeout, retries).decode("utf-8", errors="ignore")
 
 
 
@@ -46,18 +90,16 @@ def fetch_html(url: str, timeout: int = 25, retries: int = 3) -> str:
 API_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={day}"
 
 
-def fetch_api_window(league: str, day: date, timeout: int = 25) -> dict[str, list[dict]]:
+def fetch_api_window(league: str, day: date, timeout: int = 25, retries: int = 3) -> dict[str, list[dict]]:
     # ESPN 2026'dan beri tarihler arası sorgulara HTTP 400 verebiliyor.
     # Scoreboard uç noktası tek günü destekler; bir haftalık veri varsayılmaz.
     url = API_URL.format(league=league, day=day.strftime("%Y%m%d"))
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        raw = resp.read()
-        if resp.headers.get("Content-Encoding") == "gzip":
-            raw = gzip.decompress(raw)
-        if resp.status != 200 or not raw:
-            raise RuntimeError(f"ESPN JSON HTTP {resp.status} / boş yanıt: {url}")
-    data = json.loads(raw)
+    raw = _fetch_bytes(req, timeout, retries)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"ESPN JSON çözülemedi: {url} ({exc})") from exc
     if not isinstance(data.get("events"), list):
         raise RuntimeError(f"ESPN JSON events alanı yok: {url}")
     result: dict[str, list[dict]] = {}
@@ -88,11 +130,14 @@ def fetch_api_window(league: str, day: date, timeout: int = 25) -> dict[str, lis
 def fetch_window(league: str, day: date, **kw) -> dict[str, list[dict]]:
     # JSON tek günlük endpoint ana kaynaktır. HTML bot korumasından boş dönebildiği
     # için her sorguda önce HTML'yi beklemek gereksiz gecikme ve hata üretir.
+    timeout = kw.get("timeout", 25)
+    retries = kw.get("retries", 3)
     try:
-        return fetch_api_window(league, day, timeout=kw.get("timeout", 25))
+        return fetch_api_window(league, day, timeout=timeout, retries=retries)
     except Exception as api_error:
         try:
-            html = fetch_html(URL.format(day=day.strftime("%Y%m%d"), league=league), **kw)
+            html = fetch_html(URL.format(day=day.strftime("%Y%m%d"), league=league),
+                              timeout=timeout, retries=retries)
             m = _EMBED.search(html)
             if not m:
                 raise RuntimeError("HTML içerisinde ESPN fikstür verisi yok")

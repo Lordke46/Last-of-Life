@@ -19,23 +19,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - uses: actions/checkout@v4
       - name: API ve veritabanı sağlığı
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --retry 2 --retry-delay 5 \
+          # HTTP hata kodu curl için başarı sayılır; durum kodu ve gövde ayrıca yorumlanır.
+          # Böylece yalnız veri eskimesi uyarı kalır, taşıma hatası ve veritabanı hatası düşer.
+          http_code="000"
+          set +e
+          http_code=$(curl --silent --show-error --retry 2 --retry-delay 5 --retry-connrefused \
             --connect-timeout 10 --max-time 30 \
             -H "Cache-Control: no-cache" \
-            -o health.json https://lastoflife.vercel.app/api/health
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          data = json.loads(Path("health.json").read_text())
-          if not data.get("db"):
-              raise SystemExit("API erişilebilir ama veritabanı sağlıklı değil")
-          if not data.get("ok"):
-              print("::warning::Veri tazeliği sorunu: " + ", ".join(data.get("problems", [])))
-          else:
-              print("API ve veritabanı sağlıklı")
-          PY
+            -o health.json -w "%{http_code}" \
+            https://lastoflife.vercel.app/api/health)
+          curl_rc=$?
+          set -e
+          echo "curl_exit=${curl_rc} http_status=${http_code}"
+          echo "----- response body -----"
+          if [[ -s health.json ]]; then
+            cat health.json
+          else
+            echo "<boş gövde>"
+          fi
+          echo
+          echo "-------------------------"
+          python -m app.health_gate --curl-exit "${curl_rc}" --http-status "${http_code:-000}" --body health.json

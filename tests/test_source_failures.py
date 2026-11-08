@@ -1,5 +1,8 @@
+import io
+import ssl
 import tempfile
 import unittest
+import urllib.error
 from datetime import date
 from pathlib import Path
 from unittest.mock import patch
@@ -116,7 +119,94 @@ class StrictSourceTests(unittest.TestCase):
             window = espn.fetch_api_window("eng.1", date(2026, 11, 3))
         self.assertIn("dates=20261103", opener.call_args.args[0].full_url)
         self.assertNotIn("20261103-", opener.call_args.args[0].full_url)
+        self.assertIsNone(opener.call_args.kwargs.get("context"))
         self.assertEqual(espn.parse_event(window["20261103"][0], "eng.1")["home_goals"], 2)
+
+    def test_espn_retries_transient_tls_then_succeeds(self):
+        tls = urllib.error.URLError(ssl.SSLError(1, "[SSL: TLSV1_ALERT_INTERNAL_ERROR] tlsv1 alert internal error"))
+        busy = urllib.error.HTTPError(
+            "https://site.api.espn.com/apis/site/v2/sports/soccer/ned.1/scoreboard?dates=20261107",
+            503, "unavailable", None, io.BytesIO(b""))
+        payload = b'{"events":[]}'
+
+        class Response:
+            status = 200
+            headers = {}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return payload
+
+        with patch.object(espn.urllib.request, "urlopen", side_effect=[tls, busy, Response()]) as opener, \
+                patch.object(espn.time, "sleep") as sleep:
+            window = espn.fetch_api_window("ned.1", date(2026, 11, 7), retries=3)
+        self.assertEqual(window, {})
+        self.assertEqual(opener.call_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [2, 4])
+        for call in opener.call_args_list:
+            self.assertIsNone(call.kwargs.get("context"))
+
+    def test_espn_tls_failure_stays_visible_after_retries(self):
+        tls = urllib.error.URLError(ssl.SSLError(1, "[SSL: TLSV1_ALERT_INTERNAL_ERROR] tlsv1 alert internal error"))
+        with patch.object(espn.urllib.request, "urlopen", side_effect=tls) as opener, \
+                patch.object(espn.time, "sleep") as sleep:
+            with self.assertRaises(RuntimeError) as caught:
+                espn.fetch_window("uefa.europa", date(2026, 11, 7), retries=3)
+        self.assertEqual(opener.call_count, 6)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [2, 4, 2, 4])
+        message = str(caught.exception)
+        self.assertIn("JSON", message)
+        self.assertIn("HTML", message)
+        self.assertIn("3 deneme", message)
+        self.assertIn("TLSV1_ALERT_INTERNAL_ERROR", message)
+
+    def test_espn_permanent_http_error_is_not_retried(self):
+        def reject(req, timeout):
+            raise urllib.error.HTTPError(req.full_url, 400, "Bad Request", None, io.BytesIO(b"no"))
+
+        with patch.object(espn.urllib.request, "urlopen", side_effect=reject) as opener, \
+                patch.object(espn.time, "sleep") as sleep:
+            with self.assertRaises(RuntimeError) as caught:
+                espn.fetch_window("por.1", date(2026, 11, 7), retries=3)
+        self.assertEqual(opener.call_count, 2)
+        sleep.assert_not_called()
+        self.assertIn("400", str(caught.exception))
+
+    def test_espn_html_retries_timeout_and_empty_body(self):
+        class Response:
+            def __init__(self, raw):
+                self.status = 200
+                self.headers = {}
+                self._raw = raw
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return self._raw
+
+        with patch.object(espn.urllib.request, "urlopen", side_effect=[
+            TimeoutError("timed out"), Response(b""), Response(b"<html>fixture</html>"),
+        ]) as opener, patch.object(espn.time, "sleep") as sleep:
+            body = espn.fetch_html("https://www.espn.com/soccer/fixtures", retries=3)
+        self.assertEqual(body, "<html>fixture</html>")
+        self.assertEqual(opener.call_count, 3)
+        self.assertEqual([call.args[0] for call in sleep.call_args_list], [2, 4])
+        for call in opener.call_args_list:
+            self.assertIsNone(call.kwargs.get("context"))
+
+    def test_fetch_window_forwards_retry_budget(self):
+        with patch.object(espn, "fetch_api_window", return_value={}) as api:
+            espn.fetch_window("eng.1", date(2026, 11, 7), timeout=12, retries=2)
+        api.assert_called_once_with("eng.1", date(2026, 11, 7), timeout=12, retries=2)
 
     def test_tff_previous_week_failure_is_not_complete_success(self):
         with patch.object(tff, "fetch_week", side_effect=[{"week": 2, "matches": []}, RuntimeError("offline")]):
