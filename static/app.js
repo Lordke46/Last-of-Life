@@ -14,7 +14,7 @@ if (!$("#bulletinDays")) {
 }
 const bulletinToday = () => new Date().toLocaleDateString("sv-SE", {timeZone:"Europe/Istanbul"});
 const matchFilters = {high:false, live:false};
-const state = {league:null, bulletinCategory:"all", bulletinDay:bulletinToday(), bulletinReq:0,
+const state = {league:null, bulletinCategory:"main", bulletinDay:bulletinToday(), bulletinReq:0,
   tab:"matches", leagues:[], couponDate:bulletinToday(), couponReq:0, matchReq:0, live:new Map()};
 
 function selectionResult(market, h, a, state) {
@@ -382,7 +382,7 @@ async function pollUpdate() {
 $("#leagueChips").addEventListener("change",(event)=>{
   if(!event.target.matches("[data-league-select]")) return;
   resetMatchFilters();
-  state.bulletinCategory=event.target.value === "all" ? "all" : "main"; state.league=event.target.value === "all" ? null : event.target.value;
+  state.bulletinCategory="main"; state.league=event.target.value === "all" ? null : event.target.value;
   renderLeagueChips();render();
 });
 $("#leagueChips").addEventListener("click", (event)=>{

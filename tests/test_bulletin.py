@@ -47,6 +47,38 @@ class DailyBulletinTest(unittest.TestCase):
         self.assertEqual(detail['id'],'iddaa:a')
         self.assertEqual(detail['iddaa_odds']['2'],4.0)
 
+    def test_list_drops_model_bulk_but_keeps_the_card_pick(self):
+        with db.session() as c:
+            c.execute("INSERT INTO matches(id,league,kickoff,home,away,completed) VALUES('future','tur.1','2099-01-02T17:00:00+00:00','Ev','Dep',0)")
+        from app.model import predict as P
+        matrix = P.markets(P.score_matrix(1.8, .8))['markets']
+        fake = type('Model', (), {'predict': lambda self, *args: {
+            'markets': matrix, 'pick': {'market': '1', 'p': matrix['1']['p'], 'odds': 1.8},
+            'data_quality': 1, 'data_n': 20, 'factors': {'news': {'items': ['x' * 500]}},
+            'scores': [{'score': '1-0', 'p': 0.2}], 'lambda_home': 1.8, 'lambda_away': 0.8}})()
+        with patch('app.bulletin_api.engine.get_model', return_value=fake):
+            item = build_bulletin(date(2099, 1, 2), 'main')['groups'][0]['matches'][0]
+        shown = {((item.get('pick') or {}).get('market')), ((item.get('alternative') or {}).get('market'))} - {None}
+        self.assertNotIn('factors', item)
+        self.assertNotIn('scores', item)
+        self.assertNotIn('lambda_home', item)
+        self.assertLessEqual(set(item.get('markets') or {}), shown)
+        self.assertLess(len(item.get('markets') or {}), len(matrix))
+        self.assertLessEqual(set(item['iddaa_odds']), {'1', 'X', '2'} | shown)
+
+    def test_http_bulletin_defaults_to_main_leagues(self):
+        self.event('other', 'small:tr:league', '2026-10-25T16:00:00+00:00', True)
+        self.event('major', 'tur.1', '2026-10-25T17:00:00+00:00')
+        from fastapi.testclient import TestClient
+        from app.main import app
+        from app import ops
+        ops._cache.clear()
+        with patch('app.main.updater.run_in_background', return_value=False):
+            with TestClient(app) as client:
+                body = client.get('/api/bulletin', params={'day': '2026-10-25'}).json()
+        self.assertEqual(body['category'], 'main')
+        self.assertEqual([group['league'] for group in body['groups']], ['tur.1'])
+
     def test_full_bulletin_includes_other_leagues_when_main_day_is_empty(self):
         self.event('other-tomorrow','small:tr:league','2026-10-27T17:00:00+00:00',True)
         result=build_bulletin(date(2026,10,27),'all')

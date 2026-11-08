@@ -14,6 +14,35 @@ from .model.small_leagues import bulletin_event
 router = APIRouter()
 LEAGUE_ORDER = ('tur.1', 'eng.1', 'esp.1', 'ger.1', 'ita.1', 'fra.1', 'tur.2',
                 'ned.1', 'por.1', 'uefa.champions', 'uefa.europa')
+# Liste kartı bunları çizmez. Tam hali /api/match/{id} içindedir.
+# 663 maçlık günde markets+factors tek başına ~2.3 MB idi; Hobby gövde tavanı 4.5 MB.
+_LIST_HEAVY = {"markets", "factors", "extra_markets", "scores", "no_news_markets",
+               "lambda_home", "lambda_away", "calibration_by_market", "data_availability", "blend"}
+_CARD_ODDS = {"1", "X", "2"}
+
+
+def _list_item(item: dict) -> dict:
+    """Bülten listesi: kart, 1-X-2 ve kupona eklenen tek seçim. Model matrisi yok."""
+    needed = set()
+    for key in ("pick", "alternative"):
+        choice = item.get(key)
+        market = choice.get("market") if isinstance(choice, dict) else None
+        if market:
+            needed.add(market)
+    slim = {key: value for key, value in item.items() if key not in _LIST_HEAVY}
+    markets = item.get("markets") if isinstance(item.get("markets"), dict) else {}
+    extra = item.get("extra_markets") if isinstance(item.get("extra_markets"), dict) else {}
+    kept = {market: markets[market] for market in needed if market in markets}
+    kept_extra = {market: extra[market] for market in needed if market in extra and market not in kept}
+    if kept:
+        slim["markets"] = kept
+    if kept_extra:
+        slim["extra_markets"] = kept_extra
+    odds = item.get("iddaa_odds") if isinstance(item.get("iddaa_odds"), dict) else {}
+    slim["iddaa_odds"] = {market: odds[market] for market in (_CARD_ODDS | needed) if market in odds}
+    mins = item.get("iddaa_min_matches") if isinstance(item.get("iddaa_min_matches"), dict) else {}
+    slim["iddaa_min_matches"] = {market: mins[market] for market in needed if market in mins}
+    return slim
 
 
 def fixture_view(fixture, source=None):
@@ -123,7 +152,9 @@ def build_bulletin(day: date, category: str, league: str | None = None):
         group['matches'].append(item)
     rank={key:i for i,key in enumerate(LEAGUE_ORDER)}
     ordered=sorted(groups.values(),key=lambda g:(rank.get(g['league'],999),g['country'],g['name']))
-    for group in ordered:group['matches'].sort(key=lambda m:(-(m.get('confidence') or 0),m['kickoff'],m['id']))
+    for group in ordered:
+        group['matches'].sort(key=lambda m:(-(m.get('confidence') or 0),m['kickoff'],m['id']))
+        group['matches']=[_list_item(m) for m in group['matches']]
     past=day<now.astimezone(TZ).date()
     return {'day':day.isoformat(),'category':category,'groups':ordered,'total':len(matches),
             'modeled':sum(not m.get('small_league') for m in matches),'limited':sum(bool(m.get('small_league')) for m in matches),
@@ -135,7 +166,7 @@ def build_bulletin(day: date, category: str, league: str | None = None):
 
 
 @router.get('/api/bulletin')
-def bulletin(day: date | None = None, category: str = 'all', league: str | None = None):
+def bulletin(day: date | None = None, category: str = 'main', league: str | None = None):
     if category not in ('all','main','other'):raise HTTPException(400,'Bilinmeyen bülten türü')
     if league and (category=='other' or league not in LEAGUES):raise HTTPException(400,'Bilinmeyen lig')
     target=day or datetime.now(TZ).date()
