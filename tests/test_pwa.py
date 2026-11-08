@@ -40,7 +40,7 @@ class ManifestTest(unittest.TestCase):
 
     def test_installability_fields(self):
         m = pwa.MANIFEST
-        self.assertEqual((m["theme_color"], m["start_url"], m["scope"], m["display"]), ("#0f1419", "/", "/", "standalone"))
+        self.assertEqual((m["theme_color"], m["start_url"], m["scope"], m["display"]), ("#1F3D2B", "/", "/", "standalone"))
         self.assertLessEqual(len(m["short_name"]), 12)
         self.assertTrue(m["background_color"])
 
@@ -57,7 +57,7 @@ class ManifestTest(unittest.TestCase):
     def test_apple_touch_icon_and_index_meta(self):
         html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
         for needle in ('rel="manifest" href="/manifest.webmanifest"', 'rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png"',
-                       'name="apple-mobile-web-app-capable" content="yes"', 'name="theme-color" content="#0f1419"',
+                       'name="apple-mobile-web-app-capable" content="yes"', 'name="theme-color" content="#1F3D2B"',
                        '<script src="/static/pwa.js">'):
             self.assertIn(needle, html)
         status, _, body = asgi_get("/static/icons/apple-touch-icon.png")

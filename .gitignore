@@ -9,3 +9,7 @@ __pycache__/
 .vercel
 .env.local
 supabase/.temp/
+
+# Yerel tarayıcı doğrulama çıktıları
+.playwright-cli/
+output/playwright/
