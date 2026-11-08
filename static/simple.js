@@ -66,7 +66,7 @@
   function levelBadge(level, label) {
     if (!level) return `<span class="conf conf-0">${esc(label || "Sınırlı veri")}</span>`;
     const text = { 3: "Yüksek güven", 2: "Orta güven", 1: "Düşük güven" }[level];
-    return `<span class="conf conf-${level}" aria-label="${esc(label || text)}"><span class="conf-bars" aria-hidden="true"><i></i><i></i><i></i></span>${text}</span>`;
+    return `<span class="conf conf-${level}" title="Model olasılığı ve veri miktarından türetilir; gerçekleşmiş isabet kanıtı değildir." aria-label="${esc(label || text)}"><span class="conf-bars" aria-hidden="true"><i></i><i></i><i></i></span>${text}</span>`;
   }
 
   function oddsBox(odds) {

@@ -21,7 +21,7 @@ test('every match uses one template; teams, system pick and known statistics are
  assert.equal(data.markets[0].actual_iddaa_odds,1.7);
  assert.equal(data.markets[0].model_probability,.65);
  assert.equal(data.team_data.form.away_ppg,2);
- assert.equal(data.team_data.news.home.absences,0);
+ assert.equal(data.team_data.news.home.headline_inferred_absences,0);
  assert.equal(data.source.odds_age_minutes,30);
  assert.match(data.match.kickoff_turkey,/21:00/);
  assert.notEqual(a,b);
@@ -82,4 +82,19 @@ test('untrusted team and news strings stay JSON data and do not change template 
  const prefix=TEMPLATE.split('{{MATCH_DATA}}')[0];
  assert.ok(output.startsWith(prefix));
  assert.equal(JSON.parse(output.slice(prefix.length)).match.home,malicious);
+});
+
+
+test('coverage is not exported as proven accuracy and experimental handicap semantics stay explicit',()=>{
+ const data=dataFor({...match,sample_coverage:1,data_quality:.5,data_integrity:{history_complete:false},iddaa_event_id:'123',
+  extra_markets:{'Handikap -2 1':{p:.19,market_p:.4145,validation_status:'experimental',settlement_definition:{home_goal_adjustment:-2,selection:'1'}}}},at);
+ assert.equal(data.team_data.sample_coverage_ratio,1);
+ assert.equal(data.team_data.data_coverage_score,.5);
+ assert.equal(data.team_data.data_integrity.history_complete,false);
+ assert.equal(data.team_data.data_quality,undefined);
+ assert.match(data.system_assessment.confidence_scope,/not_empirical_accuracy/);
+ assert.equal(data.source.odds_event_url,'https://sportsbookv2.iddaa.com/sportsbook/event/123');
+ const handicap=data.markets.find(x=>x.market==='Handikap -2 1');
+ assert.equal(handicap.settlement_definition.home_goal_adjustment,-2);
+ assert.equal(handicap.validation_status,'experimental');
 });

@@ -114,17 +114,29 @@ class Strengths:
         return lh, la
 
 
-def team_form(matches: list[dict], team: str, before: datetime, n: int = 5) -> list[dict]:
+def _team_side(match, team, team_id=None):
+    if team_id is not None and (match.get('home_id') or match.get('away_id')):
+        if str(match.get('home_id')) == str(team_id): return True
+        if str(match.get('away_id')) == str(team_id): return False
+        return None
+    if match['home'] == team: return True
+    if match['away'] == team: return False
+    return None
+
+
+def team_form(matches: list[dict], team: str, before: datetime, n: int = 5, team_id=None) -> list[dict]:
     out = []
     for m in reversed(matches):
         if m["ts"] >= before:
             continue
-        if m["home"] == team or m["away"] == team:
-            home = m["home"] == team
+        home = _team_side(m, team, team_id)
+        if home is not None:
             gf, ga = (m["home_goals"], m["away_goals"]) if home else (m["away_goals"], m["home_goals"])
             out.append({
                 "date": m["kickoff"][:10],
                 "opponent": m["away"] if home else m["home"],
+                "opponent_id": m.get("away_id" if home else "home_id"),
+                "competition": m.get("league"),
                 "venue": "E" if home else "D",
                 "gf": gf, "ga": ga,
                 "result": "G" if gf > ga else "B" if gf == ga else "M",
@@ -173,9 +185,9 @@ def standings(matches: list[dict], since: datetime | None) -> list[dict]:
     return rows
 
 
-def last_match_before(matches: list[dict], team: str, before: datetime) -> datetime | None:
+def last_match_before(matches: list[dict], team: str, before: datetime, team_id=None) -> datetime | None:
     for m in reversed(matches):
-        if m["ts"] < before and (m["home"] == team or m["away"] == team):
+        if m["ts"] < before and _team_side(m, team, team_id) is not None:
             return m["ts"]
     return None
 

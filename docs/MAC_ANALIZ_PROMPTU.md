@@ -2,7 +2,7 @@
 
 Maç detayındaki **Bu maç için prompt hazırla** düğmesi, tek şablonu seçilen maçın verileriyle doldurur. Metin ekranda görüntülenir; **Promptu kopyala** ile başka bir AI aracına elle yapıştırılabilir. Uygulama AI servisine istek yapmaz, anahtar veya üyelik istemez.
 
-Tek kaynak `static/match-prompt.js` içindeki `TEMPLATE` sabitidir; sürüm `match-review-v1`. Şablon bütün maçlarda aynıdır. Yalnız `{{MATCH_DATA}}` JSON değişkeni doldurulur. Şablonu geliştirmek için takım başına ayrı metin yazılmaz.
+Tek kaynak `static/match-prompt.js` içindeki `TEMPLATE` sabitidir; sürüm `match-review-v2`. Şablon bütün maçlarda aynıdır. Yalnız `{{MATCH_DATA}}` JSON değişkeni doldurulur. Şablonu geliştirmek için takım başına ayrı metin yazılmaz.
 
 Prompt şunları kapsar:
 

@@ -160,7 +160,7 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
         if not mid or mid in seen or prediction.get('small_league') or str(prediction.get('league','')).startswith('small:'):
             continue
         n = prediction.get('data_n', 0)
-        if n < (BANKO_MIN_DATA_N if banko else 8):
+        if (prediction.get('data_integrity') or {}).get('history_complete') is False or n < (BANKO_MIN_DATA_N if banko else 8):
             counts["insufficient_data"] += 1
             continue
         if prediction.get("iddaa_odds") and not _odds_fresh(prediction):
