@@ -158,10 +158,10 @@ def status() -> dict:
 
 
 # --- iddaa adımı (hızlı ve tam güncelleme ortak) ----------------------------------
-def _sync_iddaa(conn, retries: int = 3) -> bool:
+def _sync_iddaa(conn, retries: int = 3) -> tuple[bool, dict]:
     try:
-        iddaa.sync_odds(conn, progress=_progress, retries=retries)
-        return True
+        stats = iddaa.sync_odds(conn, progress=_progress, retries=retries)
+        return True, stats if isinstance(stats, dict) else {}
     except LostLease:
         raise
     except Exception as exc:
@@ -177,7 +177,7 @@ def _sync_iddaa(conn, retries: int = 3) -> bool:
         conn.commit()
         _progress(f"iddaa.com oranları alınamadı ({exc}); "
                   + ("model oranları kullanılacak" if stale else "son alınan oranlar korunuyor"))
-        return False
+        return False, {}
 
 
 def _source_result(count=0, error=None):
@@ -277,8 +277,10 @@ def run_quick_update() -> dict:
             sources = {futures[f]: f.result() for f in finished}
             sources.update({futures[f]: _source_result(error="Lig çekimi süre sınırını aştı") for f in late})
             with leased_session(token, QUICK_LOCK_MINUTES) as conn:
-                iddaa_ok = _sync_iddaa(conn, retries=QUICK_IDDAA_RETRIES)
-                sources["iddaa"] = _source_result(error=None if iddaa_ok else get_meta(conn, "iddaa_last_error") or "Oranlar alınamadı")
+                iddaa_ok, iddaa_stats = _sync_iddaa(conn, retries=QUICK_IDDAA_RETRIES)
+                sources["iddaa"] = _source_result(
+                    count=int(iddaa_stats.get("bulletin_events") or 0),
+                    error=None if iddaa_ok else get_meta(conn, "iddaa_last_error") or "Oranlar alınamadı")
     except Exception as exc:
         error = str(exc)
     finally:
@@ -315,8 +317,10 @@ def run_update(leagues=None, with_news=True, wait_lock_seconds: int = 0) -> str:
                 sources[lg] = result
                 _progress(f"{lg}: {result['count']} maç işlendi ({result['status']})")
         with leased_session(token, FULL_LOCK_MINUTES) as conn:
-            ok = _sync_iddaa(conn)
-            sources["iddaa"] = _source_result(error=None if ok else get_meta(conn, "iddaa_last_error") or "Oranlar alınamadı")
+            ok, iddaa_stats = _sync_iddaa(conn)
+            sources["iddaa"] = _source_result(
+                count=int(iddaa_stats.get("bulletin_events") or 0),
+                error=None if ok else get_meta(conn, "iddaa_last_error") or "Oranlar alınamadı")
         if with_news:
             try:
                 with leased_session(token, FULL_LOCK_MINUTES) as conn:
@@ -349,6 +353,11 @@ def run_in_background(**kw) -> bool:
     return True
 
 
+def quick_exit_code(status: str) -> int:
+    """Kilit doluyken yeşil çıkış, veri ilerlemediği halde işi başarılı gösterir."""
+    return 0 if status in ("updated", "cooldown") else 1
+
+
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Maç ve haber verilerini güncelle")
     p.add_argument("--league", action="append", choices=list(LEAGUES), help="Sadece bu lig(ler)")
@@ -361,5 +370,5 @@ if __name__ == "__main__":
         faulthandler.dump_traceback_later(270, exit=True)
         res = run_quick_update()
         print(res.get("status"))
-        sys.exit(1 if res.get("status") in ("error", "partial") else 0)
+        sys.exit(quick_exit_code(res.get("status")))
     sys.exit(1 if run_update(a.league, with_news=not a.no_news, wait_lock_seconds=a.wait_lock) == "error" else 0)

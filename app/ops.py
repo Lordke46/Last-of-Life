@@ -66,8 +66,14 @@ def cached(key: tuple, build):
 
 
 def client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    return fwd.split(",")[0].strip() or (request.client.host if request.client else "unknown")
+    """Platformun yazdığı istemci adresi. İlk X-Forwarded-For halkası sahte olabilir."""
+    real = (request.headers.get("x-real-ip") or "").strip()
+    if real:
+        return real
+    parts = [part.strip() for part in (request.headers.get("x-forwarded-for") or "").split(",") if part.strip()]
+    if parts:
+        return parts[-1]
+    return request.client.host if request.client else "unknown"
 
 
 def rate_limited(key: str, limit: int, window_seconds: int = 60) -> bool:

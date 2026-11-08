@@ -85,6 +85,22 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(odds_sync.call_count, 1)  # ikinci çağrı kaynaklara gitmedi
         self.assertEqual(updater.status()["last_updated_at"], first["last_updated_at"])
 
+    def test_iddaa_source_count_uses_bulletin_size(self):
+        with patch.object(updater.espn, "sync_recent", return_value=(1, True)), \
+                patch.object(updater.tff, "sync_recent", return_value=(1, True)), \
+                patch.object(updater.iddaa, "sync_odds", return_value={"bulletin_events": 42, "odds": 100}):
+            result = updater.run_quick_update()
+        self.assertEqual(result["status"], "updated")
+        self.assertEqual(result["sources"]["iddaa"], {**result["sources"]["iddaa"], "status": "success", "count": 42})
+        self.assertEqual(result["sources"]["iddaa"]["count"], 42)
+
+    def test_quick_exit_code_fails_when_the_lock_is_busy(self):
+        self.assertEqual(updater.quick_exit_code("updated"), 0)
+        self.assertEqual(updater.quick_exit_code("cooldown"), 0)
+        self.assertEqual(updater.quick_exit_code("busy"), 1)
+        self.assertEqual(updater.quick_exit_code("partial"), 1)
+        self.assertEqual(updater.quick_exit_code("error"), 1)
+
     def test_quick_update_busy_when_locked(self):
         self.set("update_lock", iso(2))
         with patch.object(updater.espn, "sync_recent") as espn_sync:
@@ -110,11 +126,11 @@ class UpdaterTests(unittest.TestCase):
             conn.execute("INSERT INTO iddaa_odds(event_id, market, odd) VALUES('e1','1',1.5)")
             set_meta(conn, "iddaa_last_update", iso(-30))
         with patch.object(updater.iddaa, "sync_odds", side_effect=RuntimeError("down")), db.session() as conn:
-            self.assertFalse(updater._sync_iddaa(conn))
+            self.assertEqual(updater._sync_iddaa(conn), (False, {}))
         self.assertEqual(self.count("iddaa_odds"), 1)
         self.set("iddaa_last_update", iso(-60 * 7))
         with patch.object(updater.iddaa, "sync_odds", side_effect=RuntimeError("down")), db.session() as conn:
-            self.assertFalse(updater._sync_iddaa(conn))
+            self.assertEqual(updater._sync_iddaa(conn), (False, {}))
         self.assertEqual(self.count("iddaa_odds"), 0)
 
     def count(self, table):

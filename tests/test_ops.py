@@ -23,6 +23,20 @@ class OpsTests(unittest.TestCase):
             p.stop()
         self.tmp.cleanup()
 
+    def test_client_ip_prefers_platform_address_over_spoofed_forwarded_for(self):
+        from starlette.requests import Request
+
+        def request(headers, client="10.1.1.1"):
+            scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET",
+                     "scheme": "https", "path": "/", "raw_path": b"/", "query_string": b"",
+                     "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+                     "client": (client, 123), "server": ("test", 443)}
+            return Request(scope)
+
+        self.assertEqual(ops.client_ip(request({"x-real-ip": "203.0.113.8", "x-forwarded-for": "1.2.3.4"})), "203.0.113.8")
+        self.assertEqual(ops.client_ip(request({"x-forwarded-for": "1.2.3.4, 203.0.113.9"})), "203.0.113.9")
+        self.assertEqual(ops.client_ip(request({})), "10.1.1.1")
+
     def test_rate_limit_blocks_after_limit(self):
         results = [ops.rate_limited("k", 3) for _ in range(5)]
         self.assertEqual(results, [False, False, False, True, True])
