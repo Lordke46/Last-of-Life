@@ -134,6 +134,9 @@ class BlendPredictionTest(unittest.TestCase):
                     conn.execute("INSERT INTO iddaa_odds VALUES('e1',?,?)", (market, odd))
             with db.session() as conn:
                 out = blend.blend_predictions(conn, [prediction(), {**prediction(), "id": "m2"}, {"id": "m1"}])
+                future = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+                blend.blend_predictions(conn, [{**prediction(), "kickoff": future, "league": "eng.1", "home": "A", "away": "B"}])
+                self.assertEqual(conn.execute("SELECT COUNT(*) n FROM prediction_snapshots").fetchone()["n"], 0)
         self.assertTrue(out[0]["blend"]["applied"])
         self.assertEqual((out[0]["iddaa_odds"], out[0]["iddaa_event_id"]), (ODDS_1X2, "e1"))
         self.assertFalse(out[1]["blend"]["applied"])

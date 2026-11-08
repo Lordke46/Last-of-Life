@@ -85,6 +85,34 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(odds_sync.call_count, 1)  # ikinci çağrı kaynaklara gitmedi
         self.assertEqual(updater.status()["last_updated_at"], first["last_updated_at"])
 
+    def test_capture_snapshots_stores_prematch_pick_once(self):
+        kickoff = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+        pred = {"id": "m1", "league": "tur.1", "kickoff": kickoff, "home": "Ev", "away": "Dep",
+                "markets": {"1": {"p": 0.6, "model_p": 0.6}}}
+
+        def get_model(league):
+            return type("Model", (), {"upcoming_predictions": lambda self, days: [pred] if league == "tur.1" else []})()
+
+        from app.model import engine
+        with patch.object(engine, "get_model", get_model):
+            self.assertEqual(updater._capture_snapshots(), 1)
+            self.assertEqual(updater._capture_snapshots(), 1)
+        with db.session() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM prediction_snapshots").fetchone()["n"], 1)
+            self.assertEqual(conn.execute("SELECT match_id FROM prediction_snapshots").fetchone()["match_id"], "m1")
+
+    def test_bulletin_read_does_not_store_snapshots(self):
+        from app.bulletin_api import build_bulletin
+        from app.model import predict as P
+        with db.session() as conn:
+            conn.execute("INSERT INTO matches(id,league,kickoff,home,away,completed) VALUES('future','tur.1','2099-01-02T17:00:00+00:00','Ev','Dep',0)")
+        markets = P.markets(P.score_matrix(1.4, 0.9))["markets"]
+        fake = type("Model", (), {"predict": lambda self, *args: {"markets": markets, "data_n": 20, "data_quality": 1}})()
+        with patch("app.bulletin_api.engine.get_model", return_value=fake):
+            self.assertEqual(build_bulletin(datetime(2099, 1, 2).date(), "main")["total"], 1)
+        with db.session() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) n FROM prediction_snapshots").fetchone()["n"], 0)
+
     def test_quick_update_busy_when_locked(self):
         self.set("update_lock", iso(2))
         with patch.object(updater.espn, "sync_recent") as espn_sync:
