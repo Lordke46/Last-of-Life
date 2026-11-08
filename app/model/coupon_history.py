@@ -7,7 +7,10 @@
   Tek seçim yattıysa kupon hemen yatmıştır; ertelenen / iptal edilen maç oranı 1.00 sayılır (void).
 * history(): tutma oranı, "her gün KUPON_BASINA 100 TL" kâr/zarar + ROI ve günlük liste.
 """
+import json
 from datetime import datetime, timezone
+
+from ..db import get_meta, set_meta
 
 from .coupons import TZ, build_coupons
 from .settlement import outcome, selection_state, SUPPORTED_MARKETS
@@ -58,6 +61,13 @@ def freeze(conn, coupons: dict) -> list[str]:
                 "market, odds, odds_source, probability, status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?, 'pending')",
                 (coupons["date"], kind, str(p["id"]), p["league"], p.get("league_name"), p["kickoff"], p["home"],
                  p["away"], p["market"], p["odds"], p.get("odds_source"), p["p"]))
+        # Seçimle birlikte kanıt durumunu da dondur; sonraki kalibrasyon geçmişi değiştirmesin.
+        fields = ("model_probability", "market_probability", "raw_p", "calibration_n",
+                  "calibration_applied", "data_n", "probability_source", "value", "news_effect")
+        metadata = {k: c[k] for k in ("selection_policy", "calibration_status", "calibration_note", "stake_note") if k in c}
+        metadata["picks"] = {json.dumps([str(p["id"]), p["market"]]):
+                             {k: p[k] for k in fields if k in p} for p in picks}
+        set_meta(conn, f"coupon_metadata:{coupons['date']}:{kind}", json.dumps(metadata))
         saved.append(kind)
     return saved
 
@@ -99,18 +109,26 @@ def daily_coupons(target, build=build_coupons) -> dict:
                                (target.isoformat(), kind)).fetchone()
             if not row:
                 continue
+            try:
+                metadata = json.loads(get_meta(conn, f"coupon_metadata:{target.isoformat()}:{kind}", "{}"))
+            except (TypeError, ValueError):
+                metadata = {}
+            if not isinstance(metadata, dict) or not isinstance(metadata.get("picks", {}), dict):
+                metadata = {}
             picks = []
             for p in conn.execute("SELECT * FROM saved_coupon_picks WHERE day=? AND kind=? ORDER BY kickoff, match_id",
                                   (target.isoformat(), kind)):
                 picks.append({"id": p["match_id"], "league": p["league"], "league_name": p["league_name"],
                               "home": p["home"], "away": p["away"], "kickoff": p["kickoff"],
                               "market": p["market"], "odds": p["odds"], "odds_source": p["odds_source"],
-                              "p": p["probability"], "model_probability": p["probability"]})
+                              "p": p["probability"],
+                              **metadata.get("picks", {}).get(json.dumps([str(p["match_id"]), p["market"]]), {})})
             published = {"type": kind, "picks": picks, "total_odds": row["total_odds"],
                          "total_probability": row["total_probability"], "odds_source": row["odds_source"],
                          "iddaa_picks": sum(p["odds_source"] == "iddaa" for p in picks),
                          "coupon_id": f"{target.isoformat()}:{kind}:v1", "publication": "published",
-                         "published_at": row["created_at"], "stake_note": (built.get(kind) or {}).get("stake_note", "")}
+                         "published_at": row["created_at"], "stake_note": "Yayımlandığı andaki seçim ve oranlar.",
+                         **{k: metadata[k] for k in ("selection_policy", "calibration_status", "calibration_note", "stake_note") if k in metadata}}
             signature = lambda c: frozenset((str(p["id"]), p["market"]) for p in c.get("picks", []))
             live = [{**c, "publication": "live"} for c in built.get(f"{kind}_alternatives", [])
                     if signature(c) != signature(published)]

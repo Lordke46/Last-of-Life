@@ -78,6 +78,26 @@ class DbCase(unittest.TestCase):
 
 
 class FreezeTest(DbCase):
+    def test_frozen_calibration_evidence_does_not_change_with_live_predictions(self):
+        now = datetime.now(timezone.utc)
+        target = now.astimezone(ch.TZ).date()
+        original = day_coupons(target.isoformat(), banko=[pick(1), pick(2)])
+        original["banko"].update(selection_policy="hit_rate_v3", calibration_status="limited",
+                                 calibration_note="0/2 seçim kalibre edildi.", stake_note="İlk yayın kuralı")
+        for p in original["banko"]["picks"]:
+            p.update(calibration_applied=False, calibration_n=18, model_probability=.85)
+        self.freeze(original)
+        later = day_coupons(target.isoformat(), banko=[pick(1), pick(2)])
+        later["banko"].update(calibration_status="complete", calibration_note="Yeni kanıt")
+        result = ch.daily_coupons(target, build=lambda _: later)
+        published = result["banko"]
+        self.assertEqual(published["calibration_status"], "limited")
+        self.assertEqual(published["calibration_note"], "0/2 seçim kalibre edildi.")
+        self.assertEqual(published["stake_note"], "İlk yayın kuralı")
+        self.assertTrue(all(not p["calibration_applied"] and p["calibration_n"] == 18 for p in published["picks"]))
+        self.assertTrue(all(p["model_probability"] == .85 for p in published["picks"]))
+
+
     def test_web_telegram_and_history_use_same_published_coupon(self):
         from app import main, telegram_bot as tg
         now = datetime.now(timezone.utc)

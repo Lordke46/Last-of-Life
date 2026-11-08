@@ -2,7 +2,7 @@
 
 Yalnız maç başlamadan ÖNCE alınan snapshot kullanılır. Geçmiş sonuçları
 yeniden tahmin etmek yerine, zamanında yayımlanan olasılıklar değerlendirilir.
-Örnek sayısı yetersizse kalibrasyon uygulanmaz ve banko bu adayı kullanmaz.
+Örnek sayısı yetersizse kalibrasyon uygulanmaz; kupon bu sınırlamayı gösterir.
 """
 import json
 import math

@@ -89,3 +89,15 @@ test('current alternatives take precedence while previously published coupons re
  data.date='2020-01-01';
  assert.deepEqual(CouponView.alternatives(data,'banko'),[published]);
 });
+
+
+test('limited calibration is visible and the new policy does not blame it for an empty coupon',()=>{
+ const card=CouponView.couponCard(coupon('banko',{
+  calibration_status:'limited', calibration_note:'0/2 seçim kalibre edildi; <model> tahmini.'
+ }), 'Banko', 'b-good');
+ assert.match(card,/Kalibrasyon verisi sınırlı/);
+ assert.match(card,/&lt;model&gt;/);
+ const reason=CouponView.emptyReason({banko_diagnostics:{selection_policy:'hit_rate_v3',eligible_matches:1,calibration_insufficient:3}},'banko');
+ assert.match(reason,/1 aday var/);
+ assert.doesNotMatch(reason,/en az 30/);
+});
