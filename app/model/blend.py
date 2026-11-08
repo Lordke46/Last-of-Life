@@ -123,8 +123,6 @@ def blend_predictions(conn, items: list[dict]) -> list[dict]:
         blended["iddaa_event_id"] = source["event_id"] if source else None
         blended["iddaa_updated_at"] = source["updated_at"] if source else None
         out.append(blended)
-    from .snapshots import record_safely
-    record_safely(conn, out)
     return out
 
 

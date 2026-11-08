@@ -59,16 +59,18 @@ def record(conn, predictions):
     return len(rows)
 
 
-def record_safely(conn, predictions):
+def record_safely(conn, predictions) -> int:
     conn.execute('SAVEPOINT prediction_capture')
     try:
-        record(conn, predictions)
+        saved = record(conn, predictions)
         conn.execute('RELEASE SAVEPOINT prediction_capture')
         set_meta(conn, 'prediction_capture_error', '')
+        return saved
     except Exception as exc:
         conn.execute('ROLLBACK TO SAVEPOINT prediction_capture')
         conn.execute('RELEASE SAVEPOINT prediction_capture')
         set_meta(conn, 'prediction_capture_error', type(exc).__name__)
+        return 0
 
 
 def news_impact_report(paired):

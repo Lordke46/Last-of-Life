@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from .config import LEAGUES
 from .db import session, get_meta
 from . import ops, explain, bulletin_archive
-from .model import engine, extra_markets, snapshots
+from .model import engine, extra_markets
 from .model.blend import blend_prediction
 from .scrapers.iddaa import load_constraints, match_event
 from .model.coupons import TZ
@@ -115,7 +115,7 @@ def build_bulletin(day: date, category: str, league: str | None = None):
     for event_id,event in archived.items():
         if event_id not in events and belongs(event):events[event_id]=event
     by_id={str(m['id']):m for m in fixtures}
-    covered=set();matches=[];modeled=[]
+    covered=set();matches=[]
     for event_id,event in events.items():
         fixture=by_id.get(str(event.get('match_id')))
         if fixture is None and event['league'] in LEAGUES:fixture=match_event(event,fixtures)[0]
@@ -136,15 +136,13 @@ def build_bulletin(day: date, category: str, league: str | None = None):
                           datetime.fromisoformat(event['kickoff'].replace('Z','+00:00')))
             out={**base,**blend_prediction(prediction,event['odds'])}
             out['extra_markets']=extra_markets.for_match(out['lambda_home'],out['lambda_away'],event['odds'])
-            out['summary']=explain.summarize(out);modeled.append(out);matches.append(out)
+            out['summary']=explain.summarize(out);matches.append(out)
         else:
             out=bulletin_event({**base,'small_league':True,'bulletin_only':True})
             out['summary']=explain.summarize(out)
             matches.append(out)
     for fixture in fixtures:
         if str(fixture['id']) not in covered:matches.append(fixture_view(fixture,histories.get(str(fixture["id"]),{})))
-    if modeled:
-        with session() as conn:snapshots.record_safely(conn,modeled)
     groups={}
     for item in matches:
         group=groups.setdefault(item['league'],{'league':item['league'],'name':item['league_name'],

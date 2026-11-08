@@ -232,6 +232,29 @@ def _invalidate_models():
     engine.invalidate()
 
 
+def _capture_snapshots() -> int:
+    """İlk maç öncesi tahmini güncelleme işinde dondur. Bülten okuması yazmaz."""
+    try:
+        from .model import engine
+        from .model.blend import blend_predictions
+        from .model.snapshots import record_safely
+        upcoming = []
+        for league in LEAGUES:
+            upcoming.extend(engine.get_model(league).upcoming_predictions(2))
+        if not upcoming:
+            _progress("Maç öncesi tahmin kaydı: yaklaşan maç yok")
+            return 0
+        with session() as conn:
+            before = conn.execute("SELECT COUNT(*) AS n FROM prediction_snapshots").fetchone()["n"]
+            record_safely(conn, blend_predictions(conn, upcoming))
+            saved = conn.execute("SELECT COUNT(*) AS n FROM prediction_snapshots").fetchone()["n"] - before
+        _progress(f"Maç öncesi tahmin kaydı: {saved} yeni")
+        return saved
+    except Exception as exc:
+        _progress(f"Tahmin kaydı yazılamadı: {exc}")
+        return 0
+
+
 def _track_coupons(freeze: bool):
     """Kupon geçmişi: (tam güncellemede) bugünün kuponunu dondurur, biten maçlara göre işaretler.
     Hata güncellemeyi bozmaz."""
@@ -294,6 +317,8 @@ def run_quick_update() -> dict:
                     error = str(exc)
     if not skipped:
         _invalidate_models()
+        if sources.get("iddaa", {}).get("status") == "success":
+            _capture_snapshots()
         _track_coupons(freeze=False)  # hızlı yol yalnız sonuçlandırır; dondurma ağır model kurar
     state = status()
     result_status = "error" if error and not sources else "partial" if state["outcome"] == "partial" else "error" if error else "updated"
@@ -339,6 +364,8 @@ def run_update(leagues=None, with_news=True, wait_lock_seconds: int = 0) -> str:
             except LostLease as exc:
                 error = str(exc)
     _invalidate_models()
+    if sources.get("iddaa", {}).get("status") == "success":
+        _capture_snapshots()
     if error is None:
         _track_coupons(freeze=True)
     else:
