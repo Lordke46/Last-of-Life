@@ -1,7 +1,9 @@
 name: Backtest worker
+# Boş kuyrukta 15 dakikada bir runner açılmaz. Saatlik kontrol yeter;
+# asıl hesap kuyrukta iş varsa bu koşuda yapılır.
 on:
   schedule:
-    - cron: '7,22,37,52 * * * *'
+    - cron: "23 * * * *"
   workflow_dispatch:
 permissions:
   contents: read

@@ -99,8 +99,27 @@ def _age(ts: str | None):
         return None
 
 
-MAX_UPDATE_AGE = 3 * 3600   # cron 30 dk'da bir; 3 saat geçtiyse sorun var
-MAX_IDDAA_AGE = 3 * 3600
+# Hızlı güncelleme saatlik (quick.yml, dakika 17). 75 dk: bir pencere kaçtıysa uyarı.
+# Sağlık işi (dakika 45) bu uyarıda hızlı güncellemeyi tetikler.
+MAX_UPDATE_AGE = 75 * 60
+MAX_IDDAA_AGE = 75 * 60
+
+
+def _iddaa_job_age(fetch_age, sources):
+    """İddaa bayatlığı işin bitişine bakar.
+
+    `iddaa_last_update` oranlar yazılınca konur. Ortak başarı damgası haber
+    bittikten sonradır. Aynı eşiği fetch saatine uygularsak iddaa, güncelleme
+    daha taze görünürken birkaç dakika erken bayat sayılır. Kaynak başarılıysa
+    `last_success_at` (işin sonu) esas alınır. `iddaa_age_seconds` yine gerçek
+    çekim yaşı olarak kalır; kupon tazeliği de etkinlik damgasını kullanır.
+    """
+    source = sources.get("iddaa") if isinstance(sources, dict) else None
+    if isinstance(source, dict) and source.get("status") == "success":
+        job_age = _age(source.get("last_success_at"))
+        if job_age is not None:
+            return job_age
+    return fetch_age
 
 
 def health() -> dict:
@@ -117,8 +136,9 @@ def health() -> dict:
         out["problems"].append("db")
         out["ok"] = False
         return out
+    iddaa_age = _iddaa_job_age(out["iddaa_age_seconds"], out["sources"])
     for name, age, limit in (("update_stale", out["update_age_seconds"], MAX_UPDATE_AGE),
-                             ("iddaa_stale", out["iddaa_age_seconds"], MAX_IDDAA_AGE)):
+                             ("iddaa_stale", iddaa_age, MAX_IDDAA_AGE)):
         if age is None or age > limit:
             out["problems"].append(name)
     for key, source in out["sources"].items():

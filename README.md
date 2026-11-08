@@ -40,8 +40,8 @@ Herkese açık (Vercel) kurulumda veri ortak Supabase Postgres'tedir; biri günc
   Durum: `GET /api/update/status`; `sources` alanında lig/iddaa/haber bazında son deneme, son başarı ve hata bulunur.
   Yalnız istenen kaynakların hepsi başarılıysa `last_updated_at` ilerler; boş ama başarılı kaynak yanıtı hata sayılmaz.
   Kısmi güncellemede modellerin önbelleği de yenilenir; CLI kısmi başarısızlıkta sıfır olmayan çıkış kodu verir.
-- Ağır tam güncelleme + haberler: `.github/workflows/update.yml` üç saatte bir; hızlı iş `quick.yml` 15 dakikada bir (`workflow_dispatch` ile elle de);
-  `DATABASE_URL` GitHub secret'ından okunur.
+- Ağır tam güncelleme + haberler: `.github/workflows/update.yml` günde dört kez (`47 5,11,17,23 * * *`, 05:47 UTC sabah kuponundan önce); hızlı iş `quick.yml` saatte bir, dakika 17 (`workflow_dispatch` ile elle de);
+  `DATABASE_URL` GitHub secret'ından okunur. Sağlık kontrolü saatliktir; oran veya güncelleme 75 dakikayı geçerse hızlı işi kendisi tetikler.
 
 ## Veri kaynakları (anahtar gerekmez)
 
@@ -204,7 +204,7 @@ static/                web arayüzü
 data/iddia.db          yerel SQLite veritabanı (DATABASE_URL yoksa; otomatik oluşur)
 supabase/migrations/   Postgres şeması
 scripts/               bir kerelik SQLite -> Postgres aktarımı
-.github/workflows/     test CI + 3 saatlik tam / 15 dk'lık hızlı güncelleme + Telegram paylaşımı
+.github/workflows/     test CI + günde dört tam / saatlik hızlı güncelleme + Telegram paylaşımı
 ```
 
 ## Notlar
@@ -231,7 +231,7 @@ GitHub işi adımlar başlamadan ödeme/harcama limiti nedeniyle reddedilirse, h
 
 - **Önbellek:** okuma uç noktaları süreç içinde `last_updated_at`/`iddaa_last_update` sürümüne göre önbelleğe alınır; ayrıca `Cache-Control: s-maxage + stale-while-revalidate` ile Vercel CDN'de tutulur.
 - **/api/update koruması:** IP başına dakikada 5 istek (`rate_limits` tablosu, migration `20261008120000_rate_limits.sql`) + 10 dk cooldown.
-- **/api/health:** DB erişimi, son güncelleme ve iddaa çekimi yaşı. Veritabanı kapalıysa 503; veri eskimesi `ok: false` ile 200 döner ve önbelleğe alınmaz. GitHub Actions `health.yml` 30 dakikada bir durum kodunu ve gövdeyi okur: taşıma hatası, veritabanı hatası ve beklenmeyen yanıt işi düşürür, yalnız veri eskimesi uyarıdır. Sunucu hataları JSON yapılandırılmış log olarak yazılır.
+- **/api/health:** DB erişimi, son güncelleme ve iddaa çekimi yaşı. Veritabanı kapalıysa 503; veri eskimesi `ok: false` ile 200 döner ve önbelleğe alınmaz. Eşik 75 dakikadır (saatlik hızlı iş). İddaa bayatlığı, çekim başarılıysa işin bitiş saatine bakar; oran damgası haber bitmeden yazıldığı için aynı eşik erken düşmez. GitHub Actions `health.yml` saatte bir durum kodunu ve gövdeyi okur: taşıma hatası, veritabanı hatası ve beklenmeyen yanıt işi düşürür, yalnız veri eskimesi uyarıdır ve bu uyarıda kuyrukta güncelleme yoksa hızlı işi tetikler. Sunucu hataları JSON yapılandırılmış log olarak yazılır.
 - **Gizlilik:** Vercel Web Analytics ve Speed Insights çerezsiz çalışır, kişisel veri veya IP saklamaz; yalnızca anonim sayfa görüntüleme ve performans metrikleri toplanır. Script etiketleri (`/_vercel/insights/script.js`, `/_vercel/speed-insights/script.js`) şu an kaldırıldı; Vercel panelinden Analytics ve Speed Insights etkinleştirilince `static/index.html`'e eklenecek.
 
 ## Güvenilirlik ve ileriye dönük ölçüm
@@ -244,8 +244,8 @@ GitHub işi adımlar başlamadan ödeme/harcama limiti nedeniyle reddedilirse, h
   başlamış maçlar ve ertesi günün gece yarısı listeye alınmaz.
 - Canlı skorlar sınırlı paralellik ve 7 saniyelik toplam bütçeyle çekilir. Lig hatasında son iyi veri ve
   gerçek son başarı zamanı korunur; arayüz güncel olmayan skoru belirtir.
-- `POST /api/backtest` yönetici isteğini DB kuyruğuna kaydeder. `backtest.yml` yaklaşık 15 dakikada bir
-  kuyruğu kontrol eder; iş kimliği, hata/başarı ve süre sınırı DB'dedir. `GET /api/backtest` durumunu okur.
+- `POST /api/backtest` yönetici isteğini DB kuyruğuna kaydeder. `backtest.yml` saatte bir
+  kuyruğu kontrol eder; boş kuyrukta 15 dakikada bir runner açılmaz. İş kimliği, hata/başarı ve süre sınırı DB'dedir. `GET /api/backtest` durumunu okur.
   Yerelde işleyici: `python -m app.backtest_jobs`. Geçmiş testte eş zamanlı/son 3 saatte başlamış maçlar
   eğitim verisinden çıkarılır; gerçek sonuçların bilindiği ana ilişkin sınırlamalar nedeniyle bu hâlâ geriye dönük testtir.
 - `prediction_snapshots` ilk yayımlanan maç öncesi tahmini değiştirmeden saklar: model kod/parametre
