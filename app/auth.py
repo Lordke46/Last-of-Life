@@ -42,6 +42,7 @@ LIMIT_LOGIN_EMAIL = (5, 900)
 LIMIT_RESET_IP = (20, 3600)
 LIMIT_RESET_EMAIL = (3, 3600)
 LIMIT_REGISTER_IP = (10, 3600)
+LIMIT_REGISTER_EMAIL = (3, 3600)
 
 # Girişsiz kalacak API yolları (AUTH_REQUIRED=1 iken de): sağlık kontrolü ve kimlik uçları.
 PUBLIC_API = ("/api/health", "/api/auth/")
@@ -288,8 +289,9 @@ def _no_store(response: Response):
 
 @router.post("/api/auth/register")
 def register(body: Credentials, request: Request, response: Response):
-    _limited(request, "register", LIMIT_REGISTER_IP)
-    user_id = create_user(body.email, body.password)
+    email = normalize_email(body.email)
+    _limited(request, "register", LIMIT_REGISTER_IP, email, LIMIT_REGISTER_EMAIL)
+    user_id = create_user(email, body.password)
     set_session_cookie(response, start_session(user_id))
     _no_store(response)
     return {"user": user_by_id(user_id)}

@@ -1,14 +1,15 @@
 name: Sağlık kontrolü
 
-# API erişimini ve veritabanı bağlantısını doğrular. Veri eskimesi ayrı
-# güncelleme işlerinin sorumluluğundadır; sağlık kontrolü yeni job tetiklemez.
+# API erişimini ve veritabanı bağlantısını doğrular. Veri eskimesi uyarıdır;
+# eşik aşılırsa ve güncelleme işi zaten kuyrukta değilse hızlı güncellemeyi tetikler.
 on:
   schedule:
-    - cron: "*/30 * * * *"
+    - cron: "45 * * * *"
   workflow_dispatch:
 
 permissions:
   contents: read
+  actions: write
 
 concurrency:
   group: health-check
@@ -45,3 +46,9 @@ jobs:
           echo
           echo "-------------------------"
           python -m app.health_gate --curl-exit "${curl_rc}" --http-status "${http_code:-000}" --body health.json
+      - name: Bayat veride hızlı güncellemeyi tetikle
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python -m app.health_dispatch --body health.json --dispatch

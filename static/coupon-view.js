@@ -72,16 +72,34 @@
       ? [data[type]] : [];
   }
 
+  function emptyReason(data, type) {
+    const label = type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
+    const diag = data && typeof data === "object" ? data[`${type}_diagnostics`] || {} : {};
+    const lines = [];
+    if (diag.stale_odds) {
+      const age = Number(diag.odds_age_minutes);
+      const when = Number.isFinite(age) ? `Oranlar ${Math.trunc(age)} dk önce alındı. ` : "";
+      lines.push(`${when}Canlı kupon kapalı: iddaa fiyatı 2 saatten eski (${diag.stale_odds} maç).`);
+    }
+    if (type === "banko" && diag.calibration_insufficient) {
+      const best = Number.isFinite(Number(diag.calibration_best_n)) ? Math.trunc(Number(diag.calibration_best_n)) : 0;
+      const need = Number.isFinite(Number(diag.calibration_min_samples)) ? Math.trunc(Number(diag.calibration_min_samples)) : 30;
+      lines.push(`Banko için aynı lig, pazar ve olasılık diliminde en az ${need} sonuçlanmış kayıt gerekir. En dolu dilim ${best}/${need}.`);
+    }
+    if (!lines.length) lines.push(`${label} türünde uygun kupon bulunamadı.`);
+    return lines.join(" ");
+  }
+
   function couponGroup(data, type, badgeClass, date) {
     const label = type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
     const coupons = alternatives(data, type);
     const content = coupons.length
       ? coupons.map((coupon, index) => couponCard(coupon, `${label} Kuponu ${index + 1}`, badgeClass, { kind: type, index, date })).join("")
-      : `<div class="card muted">${label} türünde uygun kupon bulunamadı.</div>`;
+      : `<div class="card muted">${esc(emptyReason(data, type))}</div>`;
     return `<section class="coupon-group"><h3>${label} Kupon Alternatifleri</h3>${content}</section>`;
   }
 
-  const api = { alternatives, couponCard, couponGroup };
+  const api = { alternatives, couponCard, couponGroup, emptyReason };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.CouponView = api;
 })();

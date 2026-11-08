@@ -36,6 +36,18 @@ SELECTION_POLICY = 'balanced_v2'
 MAX_COUPON_ODDS_AGE = timedelta(hours=2)
 
 
+def _odds_age_minutes(stamp) -> int | None:
+    if not stamp:
+        return None
+    try:
+        when = datetime.fromisoformat(str(stamp).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0, int((datetime.now(timezone.utc) - when).total_seconds() // 60))
+
+
 def _odds_fresh(prediction: dict) -> bool:
     """Kupon için yalnız son 2 saat içinde yenilenmiş bülten kabul edilir.
 
@@ -127,9 +139,11 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
     p_min, p_max = (BANKO_MIN_P, 1) if banko else (SURPRISE_MIN_P, SURPRISE_MAX_P)
     o_min, o_max = (BANKO_MIN_ODDS, BANKO_MAX_ODDS) if banko else (SURPRISE_MIN_ODDS, SURPRISE_MAX_ODDS)
     pool, seen = [], set()
-    counts = {"matches": len(entries), "insufficient_data": 0, "no_market_quote": 0,
+    counts = {"matches": len(entries), "insufficient_data": 0, "stale_odds": 0, "no_market_quote": 0,
               "low_probability": 0, "odds_out_of_range": 0,
-              "calibration_insufficient": 0, "negative_or_small_edge": 0,
+              "calibration_insufficient": 0, "calibration_best_n": 0,
+              "calibration_min_samples": calibration.MIN_SAMPLES,
+              "negative_or_small_edge": 0,
               "eligible_matches": 0, "combinations_rejected": 0, "valid_combinations": 0}
     for prediction, choices in entries:
         mid = str(prediction.get('id',''))
@@ -138,6 +152,12 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
         n = prediction.get('data_n', 0)
         if n < (BANKO_MIN_DATA_N if banko else 8):
             counts["insufficient_data"] += 1
+            continue
+        if prediction.get("iddaa_odds") and not _odds_fresh(prediction):
+            counts["stale_odds"] += 1
+            age = _odds_age_minutes(prediction.get("iddaa_updated_at"))
+            if age is not None:
+                counts["odds_age_minutes"] = max(counts.get("odds_age_minutes", 0), age)
             continue
         candidates = []
         for choice in choices:
@@ -152,6 +172,7 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
                 continue
             if banko and choice.get("calibration_n", 0) < calibration.MIN_SAMPLES:
                 counts["calibration_insufficient"] += 1
+                counts["calibration_best_n"] = max(counts["calibration_best_n"], int(choice.get("calibration_n") or 0))
                 continue
             if banko and choice["p"] * choice["odds"] - 1 < BANKO_MIN_EDGE:
                 counts["negative_or_small_edge"] += 1
@@ -301,8 +322,9 @@ def build_coupons(target: date) -> dict:
     banko_diagnostics = {}
     banko_alternatives = [_coupon("banko", picks, banko_note)
                           for picks in _select_balanced(entries, "banko", BANKO_ALTERNATIVES, banko_diagnostics)]
+    surprise_diagnostics = {}
     surprise_alternatives = [_coupon("surprise", picks, surprise_note)
-                             for picks in select_surprise_alternatives(entries)]
+                             for picks in _select_balanced(entries, "surprise", SURPRISE_ALTERNATIVES, surprise_diagnostics)]
     return {
         "date": target.isoformat(),
         "matches": len(entries),
@@ -311,6 +333,7 @@ def build_coupons(target: date) -> dict:
         "surprise": surprise_alternatives[0] if surprise_alternatives else _coupon("surprise", [], surprise_note),
         "banko_alternatives": banko_alternatives,
         "banko_diagnostics": banko_diagnostics,
+        "surprise_diagnostics": surprise_diagnostics,
         "surprise_alternatives": surprise_alternatives,
         "small_leagues": small_coupon,
         "rules": {"banko_min_probability": BANKO_MIN_P, "banko_min_total_probability": BANKO_MIN_TOTAL_P,

@@ -23,6 +23,20 @@ class OpsTests(unittest.TestCase):
             p.stop()
         self.tmp.cleanup()
 
+    def test_client_ip_prefers_platform_address_over_spoofed_forwarded_for(self):
+        from starlette.requests import Request
+
+        def request(headers, client="10.1.1.1"):
+            scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": "GET",
+                     "scheme": "https", "path": "/", "raw_path": b"/", "query_string": b"",
+                     "headers": [(k.lower().encode(), v.encode()) for k, v in headers.items()],
+                     "client": (client, 123), "server": ("test", 443)}
+            return Request(scope)
+
+        self.assertEqual(ops.client_ip(request({"x-real-ip": "203.0.113.8", "x-forwarded-for": "1.2.3.4"})), "203.0.113.8")
+        self.assertEqual(ops.client_ip(request({"x-forwarded-for": "1.2.3.4, 203.0.113.9"})), "203.0.113.9")
+        self.assertEqual(ops.client_ip(request({})), "10.1.1.1")
+
     def test_rate_limit_blocks_after_limit(self):
         results = [ops.rate_limited("k", 3) for _ in range(5)]
         self.assertEqual(results, [False, False, False, True, True])
@@ -44,6 +58,32 @@ class OpsTests(unittest.TestCase):
             db.set_meta(conn, "last_updated_at", now)
             db.set_meta(conn, "iddaa_last_update", now)
         self.assertTrue(ops.health()["ok"])
+
+    def test_iddaa_stale_uses_job_finish_not_mid_job_fetch_stamp(self):
+        import json
+        from datetime import timedelta
+        now = ops.datetime.now(ops.timezone.utc)
+        fetch = (now - timedelta(minutes=80)).isoformat()
+        finished = (now - timedelta(minutes=70)).isoformat()
+        with db.session() as conn:
+            db.set_meta(conn, "last_updated_at", finished)
+            db.set_meta(conn, "iddaa_last_update", fetch)
+            db.set_meta(conn, "update_sources", json.dumps({
+                "iddaa": {"status": "success", "last_success_at": finished},
+            }))
+        report = ops.health()
+        self.assertNotIn("iddaa_stale", report["problems"])
+        self.assertGreater(report["iddaa_age_seconds"], 75 * 60)
+        self.assertTrue(report["ok"])
+
+    def test_iddaa_without_success_stamp_uses_fetch_age(self):
+        from datetime import timedelta
+        old = (ops.datetime.now(ops.timezone.utc) - timedelta(minutes=80)).isoformat()
+        with db.session() as conn:
+            db.set_meta(conn, "last_updated_at", ops.datetime.now(ops.timezone.utc).isoformat())
+            db.set_meta(conn, "iddaa_last_update", old)
+            db.set_meta(conn, "update_sources", "{}")
+        self.assertIn("iddaa_stale", ops.health()["problems"])
 
     def test_health_does_not_hide_failed_source_behind_recent_global_stamp(self):
         import json
