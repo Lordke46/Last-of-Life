@@ -80,6 +80,10 @@ class LeagueModel:
         self.done = done
         self.upcoming = upcoming
         self.news = news
+        self.all_history = done
+        self.context = {}
+        self.team_ids = {m[side]: str(m[side+'_id']) for m in (*done, *upcoming)
+                         for side in ('home','away') if m.get(side+'_id')}
         self.elo = Elo()
         for m in done:
             self.elo.update(m)
@@ -109,8 +113,10 @@ class LeagueModel:
         log_h = (1 - w) * math.log(lh_p) + w * math.log(lh_e)
         log_a = (1 - w) * math.log(la_p) + w * math.log(la_e)
 
-        form_h = team_form(hist, home, kickoff)
-        form_a = team_form(hist, away, kickoff)
+        # Güçler lig içinden; form/dinlenme diğer resmi kulvarları da kapsar.
+        context_hist = self.all_history if history is None else hist
+        form_h = team_form(context_hist, home, kickoff, team_id=self.team_ids.get(home))
+        form_a = team_form(context_hist, away, kickoff, team_id=self.team_ids.get(away))
         fs_h, fs_a = form_score(form_h), form_score(form_a)
         f_adj = MODEL["form_coef"] * (fs_h - fs_a) / 2
         log_h += f_adj
@@ -126,7 +132,7 @@ class LeagueModel:
 
         rest = {}
         for side, team in (("home", home), ("away", away)):
-            last = last_match_before(hist, team, kickoff)
+            last = last_match_before(context_hist, team, kickoff, team_id=self.team_ids.get(team))
             rest[side] = round((kickoff - last).total_seconds() / 86400, 1) if last else None
         r_adj_h = -MODEL["rest_coef"] if rest["home"] is not None and rest["home"] < 4 else 0.0
         r_adj_a = -MODEL["rest_coef"] if rest["away"] is not None and rest["away"] < 4 else 0.0
@@ -142,16 +148,21 @@ class LeagueModel:
 
         n_h = st.n_weighted.get(home, 0)
         n_a = st.n_weighted.get(away, 0)
-        data_q = min(1.0, min(n_h, n_a) / 15)
+        sample_coverage = min(1.0, min(n_h, n_a) / 15)
+        integrity = self.integrity(home, away, kickoff)
+        data_q = min(sample_coverage, 1.0 if integrity['history_complete'] is True else .5 if integrity['history_complete'] is False else .75)
         n_min = min(n_h, n_a)
         pick = P.best_pick(mk["markets"])
         news_teams = sum(1 for t in (home, away) if news.get(t, {}).get("relevant", 0) > 0)
         out.update({
             "pick": pick,
-            **P.confidence(pick["p"] if pick else None, n_min),
+            **P.confidence(pick["p"] if pick else None, n_min, data_integrity=integrity),
             "news_teams": news_teams,
             "data_n": round(n_min, 2),
-            "data_quality": round(data_q, 4),  # iddaa oranlarıyla harmanlarken güven yeniden hesaplanır
+            "sample_coverage": round(sample_coverage, 4),
+            "data_integrity": integrity,
+            "confidence_scope": "model_probability_and_data_not_empirical_accuracy",
+            "data_quality": round(data_q, 4),  # Kapsam/tutarlılık skoru; gerçekleşmiş isabet değildir.
             "factors": {
                 "poisson": {"home": round(lh_p, 3), "away": round(la_p, 3),
                             "league_home_avg": round(st.mu_h, 2), "league_away_avg": round(st.mu_a, 2),
@@ -160,17 +171,39 @@ class LeagueModel:
                 "elo": {"home": round(elo_h), "away": round(elo_a), "diff_with_home_adv": round(diff),
                         "expected_home": round(el.expected(home, away), 3),
                         "lambda_home": round(lh_e, 3), "lambda_away": round(la_e, 3)},
-                "form": {"home": form_h, "away": form_a, "home_ppg": round(fs_h, 2), "away_ppg": round(fs_a, 2),
+                "form": {"scope": "all_recorded_competitive_matches", "home": form_h, "away": form_a, "home_ppg": round(fs_h, 2), "away_ppg": round(fs_a, 2),
                          "log_adj": round(f_adj, 3)},
                 "news": {"home": _news_view(nh), "away": _news_view(na), "log_adj": round(n_adj, 3),
                          "home_log": round(n_h, 4), "away_log": round(n_a, 4)},
-                "rest": {"home_days": rest["home"], "away_days": rest["away"],
+                "rest": {"scope": "all_recorded_competitive_matches", "coverage_verified": integrity['context_checked'], "home_days": rest["home"], "away_days": rest["away"],
                          "home_adj": r_adj_h, "away_adj": r_adj_a},
                 "table": {"home": self.pos.get(home), "away": self.pos.get(away)},
                 "h2h": self.h2h(home, away),
             },
         })
         return out
+
+    def integrity(self, home, away, kickoff):
+        now = datetime.now(timezone.utc)
+        at = self.context.get('checked_at')
+        try:
+            checked = parse_ts(at or "")
+            fresh = (timedelta(0) <= now - checked < timedelta(hours=24) and checked < kickoff
+                     and self.context.get('season') == (now.year if now.month >= 7 else now.year-1))
+        except (TypeError, ValueError):
+            fresh = False
+        teams = self.context.get('by_name', {})
+        records = [teams.get(t, {}) for t in (home, away)]
+        known = fresh and all(records)
+        complete = (False if any(r.get('complete') is False for r in records)
+                    else True if all(r.get('complete') is True for r in records) else None) if known else None
+        return {'history_complete': complete, 'history_scope':'current_domestic_season', 'season':self.context.get('season'),
+                'context_checked': bool(known and all(r.get('schedule_checked') for r in records)),
+                'source_checked_at': at, 'source_fresh': fresh,
+                'standings_source': self.context.get('standings_url'),
+                'teams': {t: {'local': r.get('local'), 'source': r.get('official'), 'complete': r.get('complete')}
+                          for t, r in zip((home, away), records)},
+                'meaning': 'Veri kapsamı, güncellik ve sezon tutarlılığı; tahmin doğruluğu yüzdesi değildir.'}
 
     def h2h(self, a: str, b: str, n: int = 6) -> list[dict]:
         res = [m for m in self.done if {m["home"], m["away"]} == {a, b}]
@@ -214,6 +247,54 @@ def _news_view(n: dict) -> dict:
         "items": n["items"][:8]}
 
 
+def attach_context(conn, model, league):
+    from ..scrapers.team_context import load, league_records, season_year
+    context = load(conn, league)
+    year = season_year(datetime.now(timezone.utc))
+    current = league_records(conn, league, datetime(year,7,1,tzinfo=timezone.utc), datetime.now(timezone.utc))
+    newer_results = False
+    for tid, record in context.get('teams', {}).items():
+        actual = current.get(tid, {'p':0,'pts':0,'gf':0,'ga':0})
+        record['local'] = actual
+        official = record['official']
+        if actual['p'] > official['p']:
+            record['complete'] = None
+            newer_results = True
+        else:
+            record['complete'] = all(actual[k] == official[k] for k in ('p','gf','ga'))
+    names = {str(m[side+'_id']): m[side] for m in (*model.done, *model.upcoming)
+             for side in ('home', 'away') if m.get(side+'_id')}
+    if names:
+        marks = ','.join('?' for _ in names)
+        since = (datetime.now(timezone.utc) - timedelta(days=180)).isoformat()
+        rows = conn.execute(f'SELECT * FROM matches WHERE completed=1 AND kickoff>=? '
+                            f'AND (home_id IN ({marks}) OR away_id IN ({marks}))',
+                            [since, *names, *names]).fetchall()
+        merged = {str(m['id']): dict(m) for m in model.done}
+        for row in rows:
+            m = dict(row)
+            if m['home_goals'] is None or m['away_goals'] is None or 'friendly' in m['league']:
+                continue
+            m['home'] = names.get(str(m['home_id']), m['home'])
+            m['away'] = names.get(str(m['away_id']), m['away'])
+            m['ts'] = parse_ts(m['kickoff'])
+            merged[str(m['id'])] = m
+        model.all_history = sorted(merged.values(), key=lambda m: m['ts'])
+    context['by_name'] = {names[tid]: record for tid, record in context.get('teams', {}).items() if tid in names}
+    model.context = context
+    try:
+        checked = parse_ts(context.get('checked_at') or '')
+        fresh = timedelta(0) <= datetime.now(timezone.utc)-checked < timedelta(hours=24)
+    except (TypeError, ValueError):
+        fresh = False
+    if fresh and context.get('season') == year and not newer_results:
+        for name, record in context.get('by_name', {}).items():
+            old = model.pos.get(name, {}) if record.get('complete') is True else {}
+            model.pos[name] = {**old, **record['official'], 'team': name,
+                               'source': context.get('standings_url'), 'as_of': context['checked_at']}
+        model.table = sorted(model.pos.values(), key=lambda r: r.get('pos') or 999)
+
+
 def get_model(league: str) -> LeagueModel:
     _refresh_if_stale()
     with _lock:
@@ -227,6 +308,8 @@ def get_model(league: str) -> LeagueModel:
             done, upcoming = _load(conn, league)
             news = news_scores(conn, league, datetime.now(timezone.utc))
         model = LeagueModel(league, done, upcoming, news)
+    with session() as conn:
+        attach_context(conn, model, league)
     with _lock:
         _cache[league] = model
     return model

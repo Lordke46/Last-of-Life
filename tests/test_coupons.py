@@ -134,6 +134,11 @@ class BankoTest(unittest.TestCase):
         self.assertEqual(choice["p"], .60)
         self.assertFalse(choice["calibration_applied"])
 
+    def test_verified_missing_season_results_are_not_automatic_coupon_candidates(self):
+        entries=[entry(i,{'1':(.75,1.6)}) for i in (1,2)]
+        for p,_ in entries:p['data_integrity']={'history_complete':False}
+        self.assertEqual(select_banko(entries),[])
+
     def test_sparse_data_and_fake_odds_are_not_banko_candidates(self):
         entries=[entry(i,{'1':(.8,1.6)}) for i in (1,2)]
         entries[0][0]['data_n']=3

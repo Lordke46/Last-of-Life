@@ -81,7 +81,7 @@ def confidence_label(level: float) -> str:
     return CONF_LABELS[(level >= CONF_CUTS[0]) + (level >= CONF_CUTS[1])]
 
 
-def confidence(p: float | None, n_min: float, news_teams: int | None = None) -> dict:
+def confidence(p: float | None, n_min: float, news_teams: int | None = None, data_integrity=None) -> dict:
     """p: önerilen pazarın olasılığı (öneri yoksa None), n_min: iki takımdan az olanın (zaman ağırlıklı) maç sayısı.
     news_teams eski çağrı noktalarıyla uyumluluk için alınır; haber bulunmaması güveni etkilemez."""
     if p is None:
@@ -89,6 +89,9 @@ def confidence(p: float | None, n_min: float, news_teams: int | None = None) -> 
                 "confidence_reason": "belirgin bir öneri yok"}
     by_p, by_n = _ramp(p, CONF_P), _ramp(n_min, CONF_DATA)
     level = math.floor(min(by_p, by_n) * 100 + 1e-9) / 100  # aşağı yuvarla: etiket eşiği geçmeden Orta/Yüksek olmasın
+    incomplete = (data_integrity or {}).get('history_complete') is False
+    if incomplete:
+        level = min(level, CONF_CUTS[0])
     news_note = ""
     label = confidence_label(level)
     if by_n < by_p and confidence_label(by_n) != confidence_label(by_p):
@@ -97,6 +100,8 @@ def confidence(p: float | None, n_min: float, news_teams: int | None = None) -> 
         reason = f"olasılık %{p * 100:.0f}, veri yeterli (~{n_min:.0f} maç)"
     else:
         reason = f"olasılık %{p * 100:.0f} (~{n_min:.0f} maç veri)"
+    if incomplete:
+        reason += "; sezon kayıtlarında doğrulanmış eksik/tutarsızlık var"
     return {"confidence": level, "confidence_label": label, "confidence_reason": reason + news_note}
 
 

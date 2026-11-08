@@ -54,13 +54,27 @@ def for_match(lambda_home: float, lambda_away: float, iddaa_odds: dict | None = 
                     probability = ph * ps
                     full_result = _result(hi + hj, ai + aj)
                     result[f"İY/MS {half_result}/{full_result}"] += probability
-                    for line in handis:
-                        # Source SOV < 0 is displayed 0:abs(SOV) (away advantage).
-                        # Equivalently add signed SOV to the home score.
-                        handicap_result = _result(hi + hj + float(line), ai + aj)
-                        result[f"Handikap {line} {handicap_result}"] += probability
 
+    # Tam maç handikabı, standart MS ile AYNI tam maç skor matrisi kullanır.
+    full = P.score_matrix(lambda_home, lambda_away)
+    for line in handis:
+        for h, row in enumerate(full):
+            for a, probability in enumerate(row):
+                result[f"Handikap {line} {_result(h + float(line), a)}"] += probability
     out = {key: _out(probability) for key, probability in result.items()}
+    from .blend import devig
+    for line in handis:
+        keys = [f"Handikap {line} {side}" for side in ('1', 'X', '2')]
+        probs = devig([(iddaa_odds or {}).get(key) for key in keys])
+        for i, key in enumerate(keys):
+            item = out[key]
+            market_p = probs[i] if probs else None
+            item.update(model_p=item['p'], market_p=round(market_p, 4) if market_p is not None else None,
+                        probability_source='experimental_score_model',
+                        settlement_definition={'period':'full_time', 'home_goal_adjustment':float(line),
+                                               'selection':('1','X','2')[i],
+                                               'rule':'Compare home_goals + home_goal_adjustment with away_goals; 1 greater, X equal, 2 smaller'},
+                        model_market_gap_pp=round(abs(item['p']-market_p)*100,1) if market_p is not None else None)
     for key in (iddaa_odds or {}):
         if key.startswith(("Korner ", "Kart ")):
             out[key] = {"p": None, "fair": None, "suggested": None, "model_available": False}

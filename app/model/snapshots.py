@@ -49,7 +49,8 @@ def record(conn, predictions):
                    'blend': {k: v.get('p') for k, v in markets.items()},
                    'market': {k: v.get('market_p') for k, v in markets.items()},
                    'pick': p.get('pick'), 'confidence_label': p.get('confidence_label'),
-                   'confidence': p.get('confidence'),
+                   'confidence': p.get('confidence'), 'confidence_scope': p.get('confidence_scope'),
+                   'data_integrity': p.get('data_integrity'), 'sample_coverage': p.get('sample_coverage'),
                    'odds': p.get('iddaa_odds', {}), 'news': p.get('factors', {}).get('news'),
                    'no_news': p.get('no_news_markets'),
                    'blend_settings': p.get('blend'), 'extra_markets': p.get('extra_markets', {})}

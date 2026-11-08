@@ -22,8 +22,13 @@ _EMBED = re.compile(r"window\['__espnfitt__'\]=(\{.*?\});</script>", re.S)
 
 
 def _goals(value) -> int | None:
+    if isinstance(value, dict):
+        value = value.get("value", value.get("displayValue"))
+    if isinstance(value, bool):
+        return None
     try:
-        return int(value)
+        number = float(value)
+        return int(number) if number.is_integer() else None
     except (TypeError, ValueError):
         return None
 
@@ -90,6 +95,27 @@ def fetch_html(url: str, timeout: int = 25, retries: int = 3) -> str:
 API_URL = "https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={day}"
 
 
+def normalize_api_event(event):
+    competitions = event.get("competitions") or []
+    if not competitions:
+        return None
+    competitors = competitions[0].get("competitors") or []
+    typ = (event.get("status") or competitions[0].get("status") or {}).get("type") or {}
+    normalized = {
+        "id": event["id"], "date": event.get("date"),
+        "completed": bool(typ.get("completed")),
+        "status": {"state": typ.get("state"), "detail": typ.get("shortDetail") or typ.get("name")},
+        "competitors": [
+            {"isHome": c.get("homeAway") == "home",
+             "id": (c.get("team") or {}).get("id") or c.get("id"),
+             "displayName": (c.get("team") or {}).get("displayName") or c.get("displayName"),
+             "score": c.get("score")}
+            for c in competitors
+        ],
+    }
+    return normalized
+
+
 def fetch_api_window(league: str, day: date, timeout: int = 25, retries: int = 3) -> dict[str, list[dict]]:
     # ESPN 2026'dan beri tarihler arası sorgulara HTTP 400 verebiliyor.
     # Scoreboard uç noktası tek günü destekler; bir haftalık veri varsayılmaz.
@@ -104,23 +130,9 @@ def fetch_api_window(league: str, day: date, timeout: int = 25, retries: int = 3
         raise RuntimeError(f"ESPN JSON events alanı yok: {url}")
     result: dict[str, list[dict]] = {}
     for event in data["events"]:
-        competitions = event.get("competitions") or []
-        if not competitions:
+        normalized = normalize_api_event(event)
+        if normalized is None:
             continue
-        competitors = competitions[0].get("competitors") or []
-        typ = (event.get("status") or {}).get("type") or {}
-        normalized = {
-            "id": event["id"], "date": event.get("date"),
-            "completed": bool(typ.get("completed")),
-            "status": {"state": typ.get("state"), "detail": typ.get("shortDetail") or typ.get("name")},
-            "competitors": [
-                {"isHome": c.get("homeAway") == "home",
-                 "id": (c.get("team") or {}).get("id") or c.get("id"),
-                 "displayName": (c.get("team") or {}).get("displayName") or c.get("displayName"),
-                 "score": c.get("score")}
-                for c in competitors
-            ],
-        }
         if normalized["date"]:
             key = normalized["date"][:10].replace("-", "")
             result.setdefault(key, []).append(normalized)
@@ -172,8 +184,8 @@ def parse_event(ev: dict, league: str) -> dict | None:
         "kickoff": ev.get("date"),
         "home": home.get("displayName"),
         "away": away.get("displayName"),
-        "home_id": str(home.get("id")),
-        "away_id": str(away.get("id")),
+        "home_id": str(home["id"]) if home.get("id") is not None else None,
+        "away_id": str(away["id"]) if away.get("id") is not None else None,
         "home_goals": hg if completed else None,
         "away_goals": ag if completed else None,
         "completed": 1 if completed else 0,
@@ -188,14 +200,20 @@ def upsert(conn, m: dict):
            VALUES(:id, :league, :kickoff, :home, :away, :home_id, :away_id,
                :home_goals, :away_goals, :completed, :status, :now)
            ON CONFLICT(id) DO UPDATE SET kickoff=excluded.kickoff, home=excluded.home,
-               away=excluded.away, home_goals=excluded.home_goals, away_goals=excluded.away_goals,
-               completed=excluded.completed, status=excluded.status, updated_at=excluded.updated_at""",
-        {**m, "now": datetime.now(timezone.utc).isoformat()},
+               away=excluded.away,
+               home_id=COALESCE(excluded.home_id, matches.home_id), away_id=COALESCE(excluded.away_id, matches.away_id),
+               home_goals=CASE WHEN matches.completed=1 AND excluded.completed=0 AND :preserve_final=1 THEN matches.home_goals ELSE excluded.home_goals END,
+               away_goals=CASE WHEN matches.completed=1 AND excluded.completed=0 AND :preserve_final=1 THEN matches.away_goals ELSE excluded.away_goals END,
+               completed=CASE WHEN matches.completed=1 AND :preserve_final=1 THEN 1 ELSE excluded.completed END,
+               status=CASE WHEN matches.completed=1 AND excluded.completed=0 AND :preserve_final=1 THEN matches.status ELSE excluded.status END,
+               updated_at=excluded.updated_at""",
+        {**m, "now": datetime.now(timezone.utc).isoformat(),
+         "preserve_final": int(not any(word in str(m.get('status') or '').lower() for word in ('cancel','postpon','abandon','suspend')))},
     )
 
 
 def _walk(conn, league: str, day: date, end: date, progress=None, checkpoint=None, strict=False) -> int:
-    """day..end aralığını haftalık pencerelerle çeker; her adımda checkpoint(day) çağrılır."""
+    """day..end aralığını günlük pencerelerle çeker; her adımda checkpoint(day) çağrılır."""
     count = 0
     while day <= end:
         if progress:
@@ -207,7 +225,7 @@ def _walk(conn, league: str, day: date, end: date, progress=None, checkpoint=Non
                 raise RuntimeError(f"{league}: {day} alınamadı: {exc}") from exc
             if progress:
                 progress(f"{league}: {day} alınamadı ({exc})")
-            day += timedelta(days=3)
+            day += timedelta(days=1)
             time.sleep(REQUEST_DELAY_SEC)
             continue
         for events in window.values():
@@ -260,6 +278,9 @@ def sync_league(conn, league: str, progress=None, strict=False) -> int:
                                       min(d, today - timedelta(days=5)).isoformat()), strict=strict)
     # Bilgi amaçlı son başarılı kontrol tarihini kaydet.
     set_meta(conn, f"espn_done_{league}", (today - timedelta(days=5)).isoformat())
+    # Tam güncellemede sezon içi delikleri ve diğer resmi kulvarları uzlaştır.
+    from .team_context import reconcile_league
+    count += reconcile_league(conn, league, progress=progress)
     return count
 
 

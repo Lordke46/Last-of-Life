@@ -42,6 +42,8 @@ def analyse(prediction, now=None):
         warnings.append('Takım modeli yok; yüzdeler marjı temizlenmiş piyasa olasılıklarıdır.')
     elif not _number(n) or n < 12:
         warnings.append('Takım geçmişi sınırlı; modelin hata payı daha yüksek olabilir.')
+    if (prediction.get('data_integrity') or {}).get('history_complete') is False:
+        warnings.append('Sezon maç kayıtları kaynak puan tablosuyla uyuşmuyor; veri tamlığı doğrulanamadı.')
     options = []
     for market, item in prediction.get('markets', {}).items():
         p = item.get('p')

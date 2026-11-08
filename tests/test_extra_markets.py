@@ -28,6 +28,25 @@ class ExtraMarketsTest(unittest.TestCase):
         self.assertLess(markets["Handikap -1 1"]["p"], plain["Handikap 0 1"]["p"])
         self.assertGreater(markets["Handikap -1 2"]["p"], plain["Handikap 0 2"]["p"])
 
+    def test_handicap_zero_matches_the_standard_full_time_distribution(self):
+        from app.model import predict as P
+        extra=for_match(2.0,.8,{'Handikap 0 1':1.8})
+        normal=P.markets(P.score_matrix(2.0,.8))['markets']
+        for side in ('1','X','2'):
+            self.assertEqual(extra[f'Handikap 0 {side}']['p'],normal[side]['p'])
+
+    def test_real_handicap_quote_is_not_confused_with_model_probability(self):
+        from app.scrapers.iddaa import _market_odds
+        odds=_market_odds([{'t':2,'st':100,'s':1,'sov':'-2','o':[
+            {'no':1,'odd':2.0},{'no':2,'odd':3.85},{'no':3,'odd':2.24}]}])
+        self.assertEqual(odds['Handikap -2 1'],2.0)
+        item=for_match(2.1,1.0,odds)['Handikap -2 1']
+        self.assertEqual(item['settlement_definition']['home_goal_adjustment'],-2)
+        self.assertEqual(item['settlement_definition']['selection'],'1')
+        self.assertAlmostEqual(item['market_p'],.5/(.5+1/3.85+1/2.24),places=4)
+        self.assertNotEqual(item['p'],item['market_p'])
+        self.assertEqual(item['validation_status'],'experimental')
+
     def test_corner_and_card_quotes_have_no_model_probability(self):
         markets = for_match(1.4, 1.0, {"Korner A9.5": 1.9, "Kart Ü4.5": 2.1})
         self.assertIsNone(markets["Korner A9.5"]["p"])
