@@ -57,7 +57,19 @@ class OpsTests(unittest.TestCase):
 
     def test_health_endpoint_status_and_cdn_header(self):
         client = TestClient(main.app)
-        self.assertEqual(client.get("/api/health").status_code, 503)
+        stale = client.get("/api/health")
+        self.assertEqual(stale.status_code, 200)
+        self.assertTrue(stale.json()["db"])
+        self.assertFalse(stale.json()["ok"])
+        self.assertIn("update_stale", stale.json()["problems"])
+        for header in ("cache-control", "cdn-cache-control", "vercel-cdn-cache-control"):
+            self.assertEqual(stale.headers[header], "no-store")
+        with patch.object(ops, "session", side_effect=OSError("connection refused")):
+            down = client.get("/api/health")
+        self.assertEqual(down.status_code, 503)
+        self.assertFalse(down.json()["db"])
+        self.assertIn("db", down.json()["problems"])
+        self.assertEqual(down.headers["cache-control"], "no-store")
         for path in ("/api/leagues", "/api/update/status"):
             headers = client.get(path).headers
             self.assertEqual(headers["cache-control"], "no-store")
