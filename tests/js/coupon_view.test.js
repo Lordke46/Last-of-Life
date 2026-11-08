@@ -57,6 +57,22 @@ test("share controls identify each coupon alternative and stay hidden for empty 
   assert.doesNotMatch(empty, /data-share-coupon/);
 });
 
+test("empty coupons explain stale prices and the calibration gap", () => {
+  const stale = CouponView.couponGroup({
+    current_surprise_alternatives: [],
+    date: "2099-01-01",
+    surprise_diagnostics: { stale_odds: 4, odds_age_minutes: 185 },
+  }, "surprise", "b-warn");
+  assert.match(stale, /185 dk önce/);
+  assert.match(stale, /Canlı kupon kapalı/);
+  assert.match(stale, /4 maç/);
+  const banko = CouponView.emptyReason({
+    banko_diagnostics: { calibration_insufficient: 6, calibration_best_n: 18, calibration_min_samples: 30 },
+  }, "banko");
+  assert.match(banko, /En dolu dilim 18\/30/);
+  assert.match(banko, /en az 30/);
+});
+
 test("legacy single coupons and a missing response retain a safe rendering path", () => {
   assert.equal(CouponView.alternatives({ banko: coupon("banko") }, "banko").length, 1);
   assert.equal(CouponView.alternatives({ banko_alternatives: [], banko: coupon("banko") }, "banko").length, 1);

@@ -65,6 +65,31 @@ class BankoTest(unittest.TestCase):
         entries = [(prediction, _choices(prediction, {"1": 1.65})) for prediction, _ in entries]
         self.assertEqual(select_banko(entries), [])
 
+    def test_stale_odds_are_not_counted_as_missing_quotes(self):
+        old = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+        entries = []
+        for i in (1, 2):
+            prediction = pred(i, {"1": (.7, 1.6)})
+            prediction.update(iddaa_event_id=str(i), iddaa_updated_at=old, iddaa_odds={"1": 1.6})
+            entries.append((prediction, _choices(prediction, prediction["iddaa_odds"])))
+        report = {}
+        self.assertEqual(cp._select_balanced(entries, "surprise", 1, report), [])
+        self.assertEqual(report["stale_odds"], 2)
+        self.assertEqual(report["no_market_quote"], 0)
+        self.assertGreaterEqual(report["odds_age_minutes"], 180)
+
+    def test_calibration_gap_is_reported_without_lowering_the_threshold(self):
+        self.assertEqual(cp.calibration.MIN_SAMPLES, 30)
+        entries = []
+        for i in (1, 2, 3):
+            prediction = pred(i, {"1": (.7, 1.6)})
+            prediction["calibration_by_market"] = {"1": {"p": 0.7, "n": 18, "applied": False}}
+            entries.append((prediction, _choices(prediction, {"1": 1.6})))
+        report = {}
+        self.assertEqual(cp._select_balanced(entries, "banko", 1, report), [])
+        self.assertEqual((report["calibration_best_n"], report["calibration_min_samples"]), (18, 30))
+        self.assertGreater(report["calibration_insufficient"], 0)
+
     def test_banko_diagnostics_explain_missing_picks(self):
         entries = [entry(i, {"1": (.62, 1.40)}) for i in (1, 2)]
         report = {}
