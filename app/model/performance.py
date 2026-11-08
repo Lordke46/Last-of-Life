@@ -51,11 +51,14 @@ def _summarize(rows):
 def report(conn, now=None):
     now = now or datetime.now(timezone.utc)
     rows = conn.execute(
-        "SELECT s.league, s.captured_at, s.kickoff, s.payload, "
+        "SELECT s.match_id, s.league, s.captured_at, s.kickoff, s.payload, "
         "m.kickoff AS actual_kickoff, m.home_goals, m.away_goals "
         "FROM prediction_snapshots s JOIN matches m ON m.id=s.match_id "
         "WHERE m.completed=1 AND m.home_goals IS NOT NULL AND m.away_goals IS NOT NULL"
     ).fetchall()
+    closing = {(str(r["match_id"]), r["market"]): dict(r) for r in conn.execute(
+        "SELECT l.match_id, l.market, l.odd, l.updated_at FROM odds_log l "
+        "JOIN matches m ON m.id=l.match_id WHERE m.completed=1").fetchall()}
     picks = []
     for r in rows:
         try:
@@ -75,7 +78,20 @@ def report(conn, now=None):
             won = outcome(market, r["home_goals"], r["away_goals"])
             if won is None:
                 continue
+            last = closing.get((str(r["match_id"]), market))
+            price_change = None
+            if last and _valid(last["odd"]) and last["odd"] > 1:
+                try:
+                    kickoff = min(_ts(r["kickoff"]), _ts(r["actual_kickoff"]))
+                    at = _ts(last["updated_at"])
+                    if max(_ts(r["captured_at"]), kickoff - timedelta(hours=1)) <= at < kickoff:
+                        price_change = odds / last["odd"] - 1
+                except (TypeError, ValueError):
+                    pass
+            market_p = (data.get("market") or {}).get(market)
             picks.append({"league": r["league"], "market": market, "odds": odds,
+                          "price_change": price_change,
+                          "market_p": market_p if _valid(market_p) and 0 < market_p < 1 else None,
                           "p": p, "won": int(won),
                           "net": (odds - 1) if won else -1})
         except (TypeError, ValueError, KeyError):
@@ -86,14 +102,30 @@ def report(conn, now=None):
         groups.setdefault(("league", r["league"]), []).append(r)
         groups.setdefault(("market", r["market"]), []).append(r)
         groups.setdefault(("bucket", min(9, int(r["p"] * 10))), []).append(r)
+        band = "1.01–1.39" if r["odds"] < 1.4 else "1.40–1.79" if r["odds"] < 1.8 else "1.80–2.30" if r["odds"] <= 2.3 else "2.31+"
+        groups.setdefault(("odds_band", band), []).append(r)
     segments = {}
-    for dimension in ("league", "market", "bucket"):
+    for dimension in ("league", "market", "bucket", "odds_band"):
         segments[dimension] = [
             {"key": key, **_summarize(values)}
             for (typ, key), values in sorted(groups.items(), key=lambda a: str(a[0]))
             if typ == dimension
         ]
+    timed = [r["price_change"] for r in picks if r["price_change"] is not None]
+    paired = [r for r in picks if r["market_p"] is not None]
+    model_brier = sum((r["p"] - r["won"]) ** 2 for r in paired) / len(paired) if paired else None
+    market_brier = sum((r["market_p"] - r["won"]) ** 2 for r in paired) / len(paired) if paired else None
     return {
+        "price_tracking": {"n": len(timed), "missing": len(picks) - len(timed),
+                           "mean_price_difference": round(sum(timed) / len(timed), 4) if timed else None,
+                           "positive_rate": round(sum(v > 0 for v in timed) / len(timed), 4) if timed else None,
+                           "scope": "last_observed_iddaa_within_60_minutes_before_kickoff",
+                           "note": "İlk seçim fiyatı / son kayıtlı maç öncesi fiyat − 1. Marj düzeltilmez; resmi kapanış veya kârlılık kanıtı değildir."},
+        "market_comparison": {"n": len(paired), "blend_brier": round(model_brier, 4) if paired else None,
+                              "market_brier": round(market_brier, 4) if paired else None,
+                              "delta": round(model_brier - market_brier, 4) if paired else None,
+                              "reliable": len(paired) >= MIN_RELIABLE_SAMPLES,
+                              "note": "Aynı ilk kayıtlarda harmanlı seçim olasılığı ile marjı temizlenmiş piyasa olasılığının Brier karşılaştırması; düşük daha iyi."},
         "scope": "first_recorded_prematch_iddaa_only", "min_reliable_samples": MIN_RELIABLE_SAMPLES,
         "summary": _summarize(picks), "segments": segments,
         "notes": "ROI seçim başına 1 birim sabit stake; yalnız ilk gerçek iddaa fiyatı ve sonuçlanan maçlar. "

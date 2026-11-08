@@ -228,3 +228,20 @@ body.auth-page { padding: 0; }
 
 .slip-add.on { background: var(--forest); color: var(--sand); border-color: var(--forest); }
 .slip-add.on:hover { background: #294C35; color: var(--sand); }
+
+.recommendation-comparison h3 { margin: 0 0 10px; font-size: 18px; font-weight: 600; }
+.comparison-signals { display: block; margin-top: 5px; font-size: 10px; color: var(--muted); line-height: 1.5; }
+.recommendation-comparison table { margin: 16px 0; }
+.recommendation-comparison td { padding: 12px 8px; font-size: 13px; min-width: 72px; }
+.recommendation-comparison td:first-child { min-width: 130px; }
+.recommendation-comparison .slip-add { min-height: 40px; }
+
+@media (max-width: 620px) {
+  .recommendation-comparison table, .recommendation-comparison tbody { display: block; overflow: visible; }
+  .recommendation-comparison thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .recommendation-comparison tbody tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+  .recommendation-comparison td, .recommendation-comparison td:first-child { padding: 0; min-width: 0; border: 0; text-align: left; }
+  .recommendation-comparison td[data-field="choice"], .recommendation-comparison td[data-field="action"] { grid-column: 1 / -1; }
+  .recommendation-comparison td[data-label]::before { content: attr(data-label); display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; }
+  .recommendation-comparison .slip-add { width: 100%; }
+}

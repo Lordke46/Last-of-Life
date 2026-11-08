@@ -191,7 +191,8 @@
     const remainingMatches = new Set(rows.filter((r) => !r.completed).map((r) => r.id)).size;
     const status = !count ? "empty" : lostCount || impossible ? "lost" : pendingCount ? "pending" : "won";
     // İlk tahmini, canlı skorla yeniden hesaplanmış olasılık gibi göstermeyelim.
-    const totalProbability = status === "lost" ? 0 : status === "won" ? 1 : naiveProbability;
+    const correlated = sameMatch.length > 0;
+    const totalProbability = status === "lost" ? 0 : status === "won" ? 1 : correlated ? null : naiveProbability;
     const ev = count && totalProbability !== null ? totalProbability * totalOdds - 1 : null;
     const iddaaCount = rows.filter((r) => r.source === "iddaa").length;
 
@@ -202,7 +203,7 @@
       startedCount: rows.filter((r) => r.started).length,
       finishedCount: rows.filter((r) => r.completed).length,
       source: !count ? null : iddaaCount === count ? "iddaa" : iddaaCount === 0 ? "claude" : "karışık",
-      totalOdds, totalProbability, naiveProbability, ev,
+      totalOdds, totalProbability, naiveProbability, correlated, ev,
       stake: money ? stake : null,
       payout: money ? round2(stake * totalOdds) : null,
       profit: money ? round2(stake * totalOdds - stake) : null,

@@ -62,6 +62,39 @@ class PerformanceTests(unittest.TestCase):
         summary = self.result()["summary"]
         self.assertEqual(summary["n"], 1)
 
+    def closing(self, mid, quote, at):
+        with db.session() as conn:
+            conn.execute("INSERT INTO odds_log(match_id,market,odd,first_odd,first_seen,updated_at) VALUES(?, '1', ?, ?, ?, ?)",
+                         (mid, quote, quote, at, at))
+
+    def test_price_tracking_uses_only_the_last_hour_before_actual_kickoff(self):
+        self.add("valid")
+        self.closing("valid", 1.6, "2026-11-05T17:40:00+00:00")
+        self.add("early")
+        self.closing("early", 1.6, "2026-11-05T16:00:00+00:00")
+        self.add("late")
+        self.closing("late", 1.6, "2026-11-05T18:01:00+00:00")
+        result = self.result()
+        timing = result["price_tracking"]
+        self.assertEqual((timing["n"], timing["missing"]), (1, 2))
+        self.assertEqual(timing["mean_price_difference"], .125)
+        self.assertEqual(timing["positive_rate"], 1)
+        self.assertEqual(result["summary"]["n"], 3)  # Fiyat geçmişi yokluğu seçimi silmez.
+
+    def test_model_market_benchmark_uses_the_same_frozen_selection(self):
+        self.add("a")
+        with db.session() as conn:
+            row = conn.execute("SELECT payload FROM prediction_snapshots WHERE match_id='a'").fetchone()
+            payload = json.loads(row["payload"])
+            payload["market"] = {"1": .55}
+            conn.execute("UPDATE prediction_snapshots SET payload=? WHERE match_id='a'", (json.dumps(payload),))
+        benchmark = self.result()["market_comparison"]
+        self.assertEqual(benchmark["n"], 1)
+        self.assertEqual(benchmark["blend_brier"], .0625)
+        self.assertEqual(benchmark["market_brier"], .2025)
+        self.assertFalse(benchmark["reliable"])
+        self.assertEqual(self.result()["segments"]["odds_band"][0]["key"], "1.80–2.30")
+
     def test_empty_is_truthful(self):
         self.assertEqual(self.result()["summary"], {"n": 0, "reliable": False})
 

@@ -55,3 +55,8 @@ test("sanitize: bozuk veri elenir; favoriler", () => {
   assert.ok(S.isFavMatch(["A"], { home: "A", away: "Z" }));
   assert.equal(S.isFavMatch(["A"], { home: "X", away: "Z" }), false);
 });
+
+test('system probability rejects correlated selections and unknown probabilities',()=>{
+ assert.equal(S.summarizeSystem([{id:'same',p:.7,odds:1.5},{id:'same',p:.6,odds:1.8},{id:'other',p:.6,odds:1.7}],2,100),null);
+ assert.equal(S.summarizeSystem([{p:null,odds:1.8},{p:.6,odds:1.7}],2,100),null);
+});
