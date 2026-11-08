@@ -245,8 +245,10 @@ def _capture_snapshots() -> int:
             _progress("Maç öncesi tahmin kaydı: yaklaşan maç yok")
             return 0
         with session() as conn:
-            saved = record_safely(conn, blend_predictions(conn, upcoming))
-        _progress(f"Maç öncesi tahmin kaydı: {saved}")
+            before = conn.execute("SELECT COUNT(*) AS n FROM prediction_snapshots").fetchone()["n"]
+            record_safely(conn, blend_predictions(conn, upcoming))
+            saved = conn.execute("SELECT COUNT(*) AS n FROM prediction_snapshots").fetchone()["n"] - before
+        _progress(f"Maç öncesi tahmin kaydı: {saved} yeni")
         return saved
     except Exception as exc:
         _progress(f"Tahmin kaydı yazılamadı: {exc}")

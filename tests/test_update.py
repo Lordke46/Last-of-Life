@@ -96,7 +96,7 @@ class UpdaterTests(unittest.TestCase):
         from app.model import engine
         with patch.object(engine, "get_model", get_model):
             self.assertEqual(updater._capture_snapshots(), 1)
-            self.assertEqual(updater._capture_snapshots(), 1)
+            self.assertEqual(updater._capture_snapshots(), 0)
         with db.session() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) n FROM prediction_snapshots").fetchone()["n"], 1)
             self.assertEqual(conn.execute("SELECT match_id FROM prediction_snapshots").fetchone()["match_id"], "m1")
