@@ -89,7 +89,8 @@ test('coverage is not exported as proven accuracy and experimental handicap sema
  const data=dataFor({...match,sample_coverage:1,data_quality:.5,data_integrity:{history_complete:false},iddaa_event_id:'123',
   extra_markets:{'Handikap -2 1':{p:.19,market_p:.4145,validation_status:'experimental',settlement_definition:{home_goal_adjustment:-2,selection:'1'}}}},at);
  assert.equal(data.team_data.sample_coverage_ratio,1);
- assert.equal(data.team_data.data_coverage_score,.5);
+ assert.equal(data.team_data.data_coverage_score,1);
+ assert.equal(data.team_data.legacy_data_quality,.5);
  assert.equal(data.team_data.data_integrity.history_complete,false);
  assert.equal(data.team_data.data_quality,undefined);
  assert.match(data.system_assessment.confidence_scope,/not_empirical_accuracy/);
@@ -97,4 +98,16 @@ test('coverage is not exported as proven accuracy and experimental handicap sema
  const handicap=data.markets.find(x=>x.market==='Handikap -2 1');
  assert.equal(handicap.settlement_definition.home_goal_adjustment,-2);
  assert.equal(handicap.validation_status,'experimental');
+});
+
+test('v3 exposes quote provenance, disagreement audit, calibration and no-bet separately',()=>{
+ const data=dataFor({...match,quote_provenance:{last_fetch_at:at,last_successful_fetch_at:at,provider_price_updated_at:null,quote_status:'observed'},
+  calibration_status:'insufficient_data',decision:{status:'no_bet'},uncertainty:{empirical_accuracy_claim:false},
+  markets:{'2':{p:.62,model_p:.85,market_p:.59,model_market_gap_pp:26,disagreement_review_required:true,devig_method:'multiplicative_normalization'}}},at);
+ assert.equal(data.template_version,'match-review-v3');
+ assert.equal(data.source.quote_provenance.provider_price_updated_at,null);
+ assert.equal(data.system_assessment.decision.status,'no_bet');
+ assert.equal(data.system_assessment.calibration_status,'insufficient_data');
+ assert.equal(data.markets[0].devig_method,'multiplicative_normalization');
+ assert.equal(data.markets[0].model_market_gap_pp,26);
 });

@@ -5,7 +5,7 @@
   else root.MatchPrompt = api;
 })(globalThis, function () {
   'use strict';
-  const TEMPLATE_VERSION = 'match-review-v2';
+  const TEMPLATE_VERSION = 'match-review-v3';
   const TEMPLATE = `Bu futbol maçını bağımsız bir analist olarak Türkçe değerlendir. Aşağıda benim elimdeki maç istatistikleri, gerçek iddaa bülten fiyatları ve uygulamamın önerisi var. Sistem önerisini doğru kabul etme; önce veriyi değerlendir, sonra öneriyle karşılaştır. Veriler destekliyorsa aynı fikirde ol, desteklemiyorsa hangi seçeneğin neden daha uygun olduğunu açıkla. Sırf farklı olmak için karşı çıkma.
 
 ÇALIŞMA KURALLARI
@@ -51,13 +51,13 @@ ELİMDEKİ MAÇ VERİLERİ (JSON; yüzdeler ayrıca belirtilmedikçe olasılıkl
         status: match.completed ? 'completed' : !Number.isFinite(kickoff) || !Number.isFinite(now) ? 'unknown' : kickoff <= now ? 'started_or_result_pending' : 'prematch',
         completed: match.completed ?? null, result_only: match.result_only ?? false,
         home_goals: num(match.home_goals), away_goals: num(match.away_goals)},
-      source: {odds_source:Object.values(match.iddaa_odds || {}).some(value => num(value) !== null && value > 1) ? 'iddaa' : null, odds_updated_at:text(match.iddaa_updated_at), odds_current:match.odds_current ?? null,
+      source: {odds_source:Object.values(match.iddaa_odds || {}).some(value => num(value) !== null && value > 1) ? 'iddaa' : null, odds_updated_at:text(match.iddaa_updated_at), quote_provenance:match.quote_provenance ?? null, odds_current:match.odds_current ?? null,
         odds_event_url:/^\d+$/.test(String(match.iddaa_event_id || '')) ? 'https://sportsbookv2.iddaa.com/sportsbook/event/'+match.iddaa_event_id : null,
         odds_age_minutes:Number.isFinite(stamp) && Number.isFinite(now) ? Math.round((now-stamp)/60000) : null,
         is_archived:match.is_archived ?? false, market_only_data:match.small_league ?? false,
         model_available: !match.small_league && !!match.factors, availability:match.data_availability ?? null,
-        note:'Gerçek fiyatlar iddaa_odds alanından alınır. fair ve suggested model fiyatlarıdır; bülten oranı değildir.'},
-      team_data: {weighted_match_count:num(match.data_n), sample_coverage_ratio:num(match.sample_coverage), data_coverage_score:num(match.data_quality),
+        note:'odds_updated_at son bülten kontrolüdür; fiyat değişim zamanı değildir. Sağlayıcı değişim zamanı bilinmiyorsa null kalır. Gerçek fiyatlar iddaa_odds alanından alınır. fair ve suggested model fiyatlarıdır; bülten oranı değildir.'},
+      team_data: {weighted_match_count:num(match.data_n), sample_coverage_ratio:num(match.sample_coverage), data_coverage_score:num(match.data_coverage_score ?? match.sample_coverage), legacy_data_quality:num(match.data_quality),
         data_integrity:match.data_integrity ?? null, coverage_note:'Bu sayılar veri miktarı/tutarlılığıdır; modelin isabet oranı veya %100 güvenilirlik iddiası değildir.',
         model_expected_goals:{home:num(match.lambda_home),away:num(match.lambda_away),source:'Poisson/Elo model estimate, not measured xG'},
         poisson:f.poisson ?? null, elo:f.elo ?? null, form:f.form ?? null, rest:f.rest ?? null,
@@ -68,7 +68,9 @@ ELİMDEKİ MAÇ VERİLERİ (JSON; yüzdeler ayrıca belirtilmedikçe olasılıkl
           actual_iddaa_odds:num(match.iddaa_odds?.[key]), fair_model_odds:num(item.fair), suggested_model_odds:num(item.suggested),
           min_matches:match.iddaa_min_matches?.[key] ?? null, experimental:!!match.extra_markets?.[key],
           probability_source:item.probability_source ?? null, validation_status:item.validation_status ?? null,
-          settlement_definition:item.settlement_definition ?? null, model_market_gap_pp:num(item.model_market_gap_pp),
+          settlement_definition:item.settlement_definition ?? null,
+          devig_method:item.devig_method ?? null, devig_group:item.devig_group ?? null, book_sum:num(item.book_sum),
+          disagreement_review_required:item.disagreement_review_required ?? null, model_market_gap_pp:num(item.model_market_gap_pp),
           recorded_movement:match.iddaa_movement?.[key] ?? null};
         return Object.fromEntries(Object.entries(row).filter(([name, value]) => value !== null || ['probability','actual_iddaa_odds'].includes(name)));
       }),
@@ -82,7 +84,8 @@ ELİMDEKİ MAÇ VERİLERİ (JSON; yüzdeler ayrıca belirtilmedikçe olasılıkl
         confidence:match.confidence ?? null, confidence_label:text(match.confidence_label),
         confidence_scope:match.confidence_scope || 'model_probability_and_sample_size_not_empirical_accuracy',
         confidence_reason:text(match.confidence_reason, 1000), explanation:text(match.summary?.reason, 1500),
-        calibration:match.calibration_by_market ?? null,
+        calibration:match.calibration_by_market ?? null, calibration_status:match.calibration_status ?? 'insufficient_data',
+        decision:match.decision ?? null, uncertainty:match.uncertainty ?? null,
         note:'Bu uygulamanın tahminidir; bağımsız doğrulama, kesin sonuç veya gerçekleşmiş başarı kanıtı değildir.'}
     };
   }

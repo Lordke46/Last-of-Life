@@ -4,9 +4,9 @@ from datetime import date, datetime, timedelta, timezone
 from fastapi import APIRouter, HTTPException
 from .config import LEAGUES
 from .db import session, get_meta
-from . import ops, explain, bulletin_archive
+from . import ops, explain, bulletin_archive, quote_provenance
 from .model import engine, extra_markets
-from .model.blend import blend_prediction
+from .model.blend import blend_prediction, calibration_stats, assess_prediction
 from .scrapers.iddaa import load_constraints, match_event
 from .model.coupons import TZ
 from .model.small_leagues import bulletin_event
@@ -17,7 +17,7 @@ LEAGUE_ORDER = ('tur.1', 'eng.1', 'esp.1', 'ger.1', 'ita.1', 'fra.1', 'tur.2',
 # Liste kartı bunları çizmez. Tam hali /api/match/{id} içindedir.
 # 663 maçlık günde markets+factors tek başına ~2.3 MB idi; Hobby gövde tavanı 4.5 MB.
 _LIST_HEAVY = {"markets", "factors", "extra_markets", "scores", "no_news_markets",
-               "lambda_home", "lambda_away", "calibration_by_market", "data_availability", "blend"}
+               "lambda_home", "lambda_away", "calibration_by_market", "data_availability", "blend", "quote_provenance"}
 _CARD_ODDS = {"1", "X", "2"}
 
 
@@ -90,7 +90,9 @@ def build_bulletin(day: date, category: str, league: str | None = None):
                 source=histories.setdefault(row['match_id'],{'odds':{},'updated_at':row['updated_at']})
                 source['odds'][row['market']]=row['odd']
                 source['updated_at']=max(source['updated_at'],row['updated_at'])
+        observed=calibration_stats(conn)
         constraints=load_constraints(conn)
+        provenance=quote_provenance.load(conn,[r['id'] for r in raw])
         archived=bulletin_archive.load_day(conn,day)
         updated=get_meta(conn,'iddaa_last_update')
         coverage=json.loads(get_meta(conn,'iddaa_stats') or 'null')
@@ -130,12 +132,14 @@ def build_bulletin(day: date, category: str, league: str | None = None):
                     country=LEAGUES.get(event['league'],{}).get('country',event.get('country','')),
                     iddaa_event_id=event_id,iddaa_updated_at=event.get('updated_at'),
                     iddaa_min_matches=event.get('min_matches',{}),odds_current=current,
-                    is_archived=not current,iddaa_odds=event.get('odds',{}))
+                    is_archived=not current,iddaa_odds=event.get('odds',{}),
+                    quote_provenance=quote_provenance.for_event(provenance,event_id) if current else None)
         if fixture and current:
             prediction=engine.get_model(event['league']).predict(fixture['home'],fixture['away'],
                           datetime.fromisoformat(event['kickoff'].replace('Z','+00:00')))
             out={**base,**blend_prediction(prediction,event['odds'])}
             out['extra_markets']=extra_markets.for_match(out['lambda_home'],out['lambda_away'],event['odds'])
+            out=assess_prediction(out,observed)
             out['summary']=explain.summarize(out);matches.append(out)
         else:
             out=bulletin_event({**base,'small_league':True,'bulletin_only':True})

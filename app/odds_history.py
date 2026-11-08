@@ -6,6 +6,7 @@ Not: "açılış" bizim ilk gördüğümüz orandır (iddaa.com'un gerçek açı
 Bitmiş maçların geçmişi son kickoff'tan RETENTION_DAYS gün sonra temizlenir.
 """
 from datetime import datetime, timedelta, timezone
+from . import quote_provenance
 
 RETENTION_DAYS = 30
 DROP_THRESHOLD_PCT = 10.0  # açılışa göre en az bu kadar düşen oran "belirgin düşüş" sayılır
@@ -30,10 +31,15 @@ def record_snapshot(conn, events: list[dict], captured_at: str | None = None) ->
     captured_at = captured_at or _now_iso()
     latest = _latest_recorded(conn)
     rows = []
+    provenance=quote_provenance.load(conn,[e['id'] for e in events])
     for event in events:
         for market, odd in event["odds"].items():
             previous = latest.get((event["id"], market))
-            if previous is not None and round(previous, 2) == round(odd, 2):
+            quote=quote_provenance.for_event(provenance,event['id']).get('quotes',{}).get(market,{})
+            reset_at=quote_provenance.timestamp(quote.get('identity_first_observed_at'))
+            observed_at=quote_provenance.timestamp(quote.get('quote_observed_at'))
+            identity_reset=bool(reset_at and reset_at==observed_at)
+            if previous is not None and round(previous, 2) == round(odd, 2) and not identity_reset:
                 continue
             rows.append((event["id"], market, odd, captured_at, event["kickoff"]))
     conn.executemany(
@@ -72,7 +78,22 @@ def _opening_vs_current(conn, where: str, params) -> list[dict]:
             JOIN iddaa_odds_history h
               ON h.event_id = f.event_id AND h.market = f.market AND h.captured_at = f.first_at
             WHERE {where}""", params).fetchall()
-    return [dict(r) for r in rows]
+    rows = [dict(r) for r in rows]
+    state = quote_provenance.load(conn)
+    # Provider IDs/line/selection changes start a new comparison series, never bridge identities.
+    reset = [r for r in rows if (quote_provenance.for_event(state,r['event_id']).get('quotes',{}).get(r['market'],{}).get('identity_first_observed_at') or '') > r['opened_at']]
+    if reset:
+        history = conn.execute('SELECT event_id,market,odd,captured_at FROM iddaa_odds_history ORDER BY captured_at').fetchall()
+        first = {}
+        for h in history:
+            key = (h['event_id'],h['market'])
+            cutoff = quote_provenance.for_event(state,h['event_id']).get('quotes',{}).get(h['market'],{}).get('identity_first_observed_at')
+            if cutoff and h['captured_at']>=cutoff:first.setdefault(key,h)
+        for r in reset:
+            opening = first.get((r['event_id'],r['market']))
+            r['opening_odd'] = opening['odd'] if opening else r['current_odd']
+            r['opened_at'] = opening['captured_at'] if opening else None
+    return [r for r in rows if r['opened_at']]
 
 
 def movements_for_matches(conn, match_ids) -> dict[str, dict[str, dict]]:
@@ -99,7 +120,10 @@ def history_for_match(conn, match_id: str) -> dict | None:
         """SELECT market, odd, captured_at FROM iddaa_odds_history
            WHERE event_id = ? ORDER BY captured_at""", (event["id"],)).fetchall()
     markets: dict[str, list[dict]] = {}
+    provenance=quote_provenance.for_event(quote_provenance.load(conn,[event['id']]),event['id'])
     for r in rows:
+        cutoff=provenance.get('quotes',{}).get(r['market'],{}).get('identity_first_observed_at')
+        if cutoff and r['captured_at']<cutoff:continue
         markets.setdefault(r["market"], []).append({"at": r["captured_at"], "odd": r["odd"]})
     return {"event_id": event["id"], "markets": markets}
 

@@ -44,7 +44,7 @@ function prospectiveHtml(forward) {
       const m = v.metrics;
       return `<tr><td>${esc(name)}</td><td>${m.n || 0}</td><td>${m.brier ?? "—"}</td><td>${m.logloss ?? "—"}</td></tr>`;
     }).join("");
-    return `<div class="card"><h3>Yayımlanmış tahminlerin gerçek sonuçları</h3><p class="muted">İlk maç öncesi kayıtlar; üç varyant aynı maçlarda karşılaştırılır. Kayıtlı tahmin: ${Number(forward.stored) || 0}. Sonuçlar veri biriktikçe oluşur. Yukarıdaki geçmiş testten ayrıdır.</p><table><tr><th>Varyant</th><th>Maç</th><th>Brier</th><th>Log-loss</th></tr>${rows}</table></div>` + confidenceReportHtml(forward.recommendations) + realOddsPerformanceHtml(forward.real_odds_picks);
+    return `<div class="card"><h3>Yayımlanmış tahminlerin gerçek sonuçları</h3><p class="muted">İlk maç öncesi kayıtlar; üç varyant aynı maçlarda karşılaştırılır. Kayıtlı tahmin: ${Number(forward.stored) || 0}. ${forward.evaluation_status === "insufficient_data" ? "Kalibrasyon için yeterli kayıt yok; doğruluk artışı gösterilmiş değil." : "Örnek sayısı yeterli olmak tek başına kalibrasyon veya başarı kanıtı değildir."} Sonuçlar veri biriktikçe oluşur. Yukarıdaki geçmiş testten ayrıdır.</p><table><tr><th>Varyant</th><th>Maç</th><th>Brier</th><th>Log-loss</th></tr>${rows}</table></div>` + confidenceReportHtml(forward.recommendations) + realOddsPerformanceHtml(forward.real_odds_picks);
   }
   return "";
 }

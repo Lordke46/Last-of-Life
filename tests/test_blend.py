@@ -257,7 +257,7 @@ class OddsLogTest(unittest.TestCase):
         self.assertEqual(res["n"], 20)
         self.assertEqual(res["blend"]["groups"], {})
         with db.session() as conn:
-            odds_log.record(conn, [("x15", "1", 2.1), ("x15", "X", 3.3), ("x15", "2", 3.6)], "t")
+            odds_log.record(conn, [("x15", "1", 2.1), ("x15", "X", 3.3), ("x15", "2", 3.6)], (base+timedelta(days=14,hours=23)).isoformat())
         res = engine.backtest("eng.1", min_history=10)
         self.assertEqual((res["blend"]["matches"], res["blend"]["groups"]["1x2"]["n"]), (1, 1))
         self.assertEqual(res["n"], 20)  # ana metrikler (harmansız) aynı

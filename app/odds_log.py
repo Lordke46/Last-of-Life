@@ -56,10 +56,14 @@ def record_safely(conn, rows: list[tuple[str, str, float]], now: str) -> bool:
 def load_for_league(conn, league: str) -> dict[str, dict[str, float]]:
     """Lig maçları için kaydedilmiş oranlar: {match_id: {pazar: oran}}."""
     rows = conn.execute(
-        "SELECT l.match_id, l.market, l.odd FROM odds_log l JOIN matches m ON m.id=l.match_id "
+        "SELECT l.match_id, l.market, l.odd, l.first_seen, l.updated_at, m.kickoff FROM odds_log l JOIN matches m ON m.id=l.match_id "
         "WHERE m.league=?", (league,)).fetchall()
     out: dict[str, dict[str, float]] = {}
+    from .quote_provenance import timestamp
     for r in rows:
+        first, last, kickoff = (timestamp(r[k]) for k in ('first_seen','updated_at','kickoff'))
+        if not first or not last or not kickoff or not first<=last<kickoff:
+            continue
         out.setdefault(r["match_id"], {})[r["market"]] = r["odd"]
     return out
 

@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import auth, explain, odds_history, odds_log, ops, pwa, updater
-from . import live, backtest_jobs
+from . import live, backtest_jobs, quote_provenance
 from .api_odds_history import router as odds_history_router
 from .config import LEAGUES, MODEL, STATIC_DIR, league_aliases, league_slug, resolve_league
 from .db import get_meta, init_db, is_postgres, session
@@ -150,6 +150,10 @@ def _small_prediction(event: dict) -> dict:
         event = {**event, 'iddaa_min_matches':constraints.get(str(event.get('iddaa_event_id',event['id'])), {})}
     if 'odds_current' not in event:
         event={**event,'odds_current':parse_ts(event['kickoff'])>datetime.now(timezone.utc)}
+    if 'quote_provenance' not in event and not event.get('is_archived'):
+        with session() as conn:
+            state=quote_provenance.load(conn,[event.get('iddaa_event_id',event.get('event_id',event.get('id')))])
+        event={**event,'quote_provenance':quote_provenance.for_event(state,event.get('iddaa_event_id',event.get('event_id',event.get('id'))))}
     result=bulletin_event(event)
     result['summary']=explain.summarize(result)
     return result

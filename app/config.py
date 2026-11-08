@@ -120,6 +120,7 @@ MODEL = {
     # 1 = yalnız piyasa. Oran yoksa model olasılığı aynen kalır. Ağırlığı Model sekmesindeki
     # harmanlı/harmansız karşılaştırma (log-loss taraması) biriktikçe ayarlayın.
     "market_weight": 0.5,
+    "disagreement_review_pp": 20.0,  # İnceleme eşiği; optimize edildiği iddia edilmez.
 }
 
 NEWS_LOOKBACK_DAYS = 7

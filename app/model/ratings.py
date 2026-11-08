@@ -124,10 +124,19 @@ def _team_side(match, team, team_id=None):
     return None
 
 
+def played_before(match, before):
+    """Only completed competitive matches with conservative result-availability lag."""
+    if match.get('completed') is not None and not match.get('completed'):return False
+    if any(v in str(match.get('status','')).lower() for v in ('cancel','postpon','abandon','suspend')):return False
+    if 'friendly' in str(match.get('league','')).lower():return False
+    return (match.get('home_goals') is not None and match.get('away_goals') is not None
+            and match['ts'].timestamp()+3*3600 <= before.timestamp())
+
+
 def team_form(matches: list[dict], team: str, before: datetime, n: int = 5, team_id=None) -> list[dict]:
     out = []
     for m in reversed(matches):
-        if m["ts"] >= before:
+        if not played_before(m, before):
             continue
         home = _team_side(m, team, team_id)
         if home is not None:
@@ -187,7 +196,7 @@ def standings(matches: list[dict], since: datetime | None) -> list[dict]:
 
 def last_match_before(matches: list[dict], team: str, before: datetime, team_id=None) -> datetime | None:
     for m in reversed(matches):
-        if m["ts"] < before and _team_side(m, team, team_id) is not None:
+        if played_before(m, before) and _team_side(m, team, team_id) is not None:
             return m["ts"]
     return None
 

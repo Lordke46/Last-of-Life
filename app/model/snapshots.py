@@ -2,7 +2,7 @@
 import hashlib
 import json
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import lru_cache
 from ..config import BASE_DIR, MODEL
 from ..db import get_meta, set_meta
@@ -30,7 +30,8 @@ def now():
 def code_version():
     digest = hashlib.sha256()
     for name in ('config.py', 'news_intel.py', 'model/engine.py', 'model/ratings.py', 'model/predict.py',
-                 'model/european.py', 'model/blend.py', 'model/extra_markets.py'):
+                 'model/european.py', 'model/blend.py', 'model/extra_markets.py', 'model/decision_quality.py',
+                 'model/calibration.py', 'quote_provenance.py'):
         digest.update((BASE_DIR / 'app' / name).read_bytes())
     return digest.hexdigest()[:16]
 
@@ -51,7 +52,8 @@ def record(conn, predictions):
                    'pick': p.get('pick'), 'confidence_label': p.get('confidence_label'),
                    'confidence': p.get('confidence'), 'confidence_scope': p.get('confidence_scope'),
                    'data_integrity': p.get('data_integrity'), 'sample_coverage': p.get('sample_coverage'),
-                   'odds': p.get('iddaa_odds', {}), 'news': p.get('factors', {}).get('news'),
+                   'odds': p.get('iddaa_odds', {}), 'quote_provenance':p.get('quote_provenance'),
+                   'decision':p.get('decision'),'calibration_status':p.get('calibration_status'), 'news': p.get('factors', {}).get('news'),
                    'no_news': p.get('no_news_markets'),
                    'blend_settings': p.get('blend'), 'extra_markets': p.get('extra_markets', {})}
         rows.append((str(p['id']), p['league'], p['kickoff'], at.isoformat(), version, data_version, parameters, json.dumps(payload)))
@@ -105,7 +107,7 @@ def report(conn):
     from .performance import report as real_odds_performance
     from .blend import GROUPS
     from .settlement import outcome
-    rows = conn.execute('SELECT s.*,m.home_goals,m.away_goals,m.kickoff AS actual_kickoff '
+    rows = conn.execute('SELECT s.*,m.home_goals,m.away_goals,m.kickoff AS actual_kickoff, m.status AS match_status '
                         'FROM prediction_snapshots s JOIN matches m ON m.id=s.match_id WHERE m.completed=1').fetchall()
     samples = {k: [] for k in ('model', 'blend', 'market')}
     news_pairs = {'with_news': [], 'without_news': []}
@@ -116,7 +118,10 @@ def report(conn):
     legacy = 0
     for r in rows:
         captured = datetime.fromisoformat(r['captured_at'].replace('Z', '+00:00'))
-        if captured >= datetime.fromisoformat(r['actual_kickoff'].replace('Z', '+00:00')):
+        if (captured >= min(datetime.fromisoformat(r['actual_kickoff'].replace('Z', '+00:00')),
+                                datetime.fromisoformat(r['kickoff'].replace('Z', '+00:00')))
+                or datetime.fromisoformat(r['actual_kickoff'].replace('Z','+00:00'))+timedelta(hours=3)>now()
+                or any(v in str(r['match_status'] or '').lower() for v in ('cancel','postpon','abandon','suspend'))):
             continue
         hg, ag = r['home_goals'], r['away_goals']
         if hg is None or ag is None:
@@ -160,15 +165,28 @@ def report(conn):
                 samples[variant].append({'day': r['kickoff'][:10], 'probs': probs, 'actual': actual})
         for market, probability in payload['blend'].items():
             won = outcome(market, hg, ag)
-            if probability is None or won is None:
+            if (not isinstance(probability,(int,float)) or isinstance(probability,bool) or not math.isfinite(probability)
+                    or not 0<=probability<=1 or won is None):
                 continue
-            score = market_scores.setdefault(market, {'n': 0, 'brier_sum': 0.0})
+            score = market_scores.setdefault(market, {'n': 0, 'brier_sum': 0.0, 'logloss_sum':0.0, 'bins':{}})
             score['n'] += 1
             score['brier_sum'] += (probability - int(won)) ** 2
+            score['logloss_sum'] -= math.log(max(1e-9,probability if won else 1-probability))
+            bucket = min(9,int(probability*10))
+            band = score['bins'].setdefault(bucket,{'n':0,'predicted_sum':0.0,'won':0})
+            band['n']+=1;band['predicted_sum']+=probability;band['won']+=int(won)
     return {'real_odds_picks': real_odds_performance(conn),
             'scope': 'first_published_prematch', 'versions': sorted(versions),
             'variants': {v: {'metrics': metrics(s), 'calibration': calibration(s)} for v, s in samples.items()},
-            'markets': {k: {'n': v['n'], 'brier': round(v['brier_sum'] / v['n'], 4)} for k, v in market_scores.items()},
+            'evaluation_status':'available' if any(v['n']>=30 for v in market_scores.values()) else 'insufficient_data',
+            'evaluation_method':'immutable_prematch_forward_observations_not_reconstructed_predictions',
+            'markets': {k: {'n': v['n'], 'brier': round(v['brier_sum'] / v['n'], 4),
+                           'logloss':round(v['logloss_sum']/v['n'],4),'min_samples':30,
+                           'status':'available' if v['n']>=30 else 'insufficient_data',
+                           'reliability':[{'band':[b/10,(b+1)/10],'n':d['n'],
+                             'predicted':round(d['predicted_sum']/d['n'],4),'actual':round(d['won']/d['n'],4),
+                             'sufficient':d['n']>=30} for b,d in sorted(v['bins'].items())]}
+                        for k, v in market_scores.items()},
             'recommendations': {'groups': recommendation_rows(recommendation_groups), 'legacy_without_confidence': legacy},
             'news_ab': {'scope': 'paired_prematch', 'with_news': metrics(news_pairs['with_news']),
                         'without_news': metrics(news_pairs['without_news']),

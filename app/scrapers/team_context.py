@@ -61,14 +61,28 @@ def league_records(conn, league, since, now):
         h, a = row['home_goals'], row['away_goals']
         for side, scored, conceded in (('home',h,a),('away',a,h)):
             tid = str(row[side+'_id'])
-            values = result.setdefault(tid, {'p':0, 'pts':0, 'gf':0, 'ga':0})
+            values = result.setdefault(tid, {'p':0, 'pts':0, 'gf':0, 'ga':0, 'w':0,'d':0,'l':0,'gd':0})
             values['p'] += 1; values['gf'] += scored; values['ga'] += conceded
             values['pts'] += 3 if scored > conceded else 1 if scored == conceded else 0
+            values['w' if scored>conceded else 'd' if scored==conceded else 'l'] += 1
+            values['gd'] = values['gf']-values['ga']
     return result
 
 
 def local_record(conn, league, team_id, since, now):
-    return league_records(conn, league, since, now).get(str(team_id), {'p':0, 'pts':0, 'gf':0, 'ga':0})
+    return league_records(conn, league, since, now).get(str(team_id), {'p':0, 'pts':0, 'gf':0, 'ga':0, 'w':0,'d':0,'l':0,'gd':0})
+
+
+def consistency(official, local):
+    keys = [k for k in ('p','gf','ga','w','d','l','gd') if official.get(k) is not None]
+    checks = {k:local.get(k)==official[k] for k in keys}
+    internal = (official.get('gd') is None or official['gd']==official['gf']-official['ga'])
+    if all(official.get(k) is not None for k in ('w','d','l')):
+        internal = internal and official['w']+official['d']+official['l']==official['p']
+    return {'results_match':all(checks.values()) and internal,'fields':checks,'source_arithmetic_valid':internal,
+            'points_match':local.get('pts')==official.get('pts'),
+            'possible_points_adjustment':official.get('pts')-local['pts'] if official.get('pts') is not None else None,
+            'points_note':'Source points may include disciplinary deductions; mismatch is recorded, not silently corrected.'}
 
 
 def reconcile_league(conn, league, progress=None, now=None):
@@ -110,9 +124,10 @@ def reconcile_league(conn, league, progress=None, now=None):
             error = f'{type(exc).__name__}: {str(exc)[:160]}'
         record = local_record(conn, league, tid, since, now)
         # Puan silme/tie-break kaynak tablosundan gelir; skor/adet tutarlılığı ayrı denetlenir.
-        complete = all(team[k] is not None and record[k] == team[k] for k in ('p', 'gf', 'ga'))
+        checks = consistency(team,record)
+        complete = checks['results_match']
         teams[tid] = {'official': team, 'local': record, 'complete': complete,
-                      'schedule_checked': error is None, 'schedule_error': error, 'schedule_url': schedule_url}
+                      'consistency':checks, 'schedule_checked': error is None, 'schedule_error': error, 'schedule_url': schedule_url}
         if progress:
             progress(f'{league}: {team["team"]} sezon uzlaştırma {record["p"]}/{team["p"]}')
         conn.commit()

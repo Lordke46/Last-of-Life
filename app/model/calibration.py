@@ -6,7 +6,7 @@ yeniden tahmin etmek yerine, zamanında yayımlanan olasılıklar değerlendiril
 """
 import json
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from .settlement import outcome
 
@@ -32,7 +32,7 @@ def load(conn, now=None) -> dict:
     now = now or datetime.now(timezone.utc)
     rows = conn.execute(
         "SELECT s.league, s.kickoff, s.captured_at, s.payload, "
-        "m.home_goals, m.away_goals, m.completed "
+        "m.home_goals, m.away_goals, m.completed, m.kickoff AS actual_kickoff "
         "FROM prediction_snapshots s JOIN matches m ON m.id=s.match_id "
         "WHERE m.completed=1 AND m.home_goals IS NOT NULL AND m.away_goals IS NOT NULL"
     ).fetchall()
@@ -41,7 +41,10 @@ def load(conn, now=None) -> dict:
         try:
             captured = datetime.fromisoformat(r["captured_at"].replace("Z", "+00:00"))
             kickoff = datetime.fromisoformat(r["kickoff"].replace("Z", "+00:00"))
-            if not captured < kickoff < now:
+            actual = datetime.fromisoformat(r['actual_kickoff'].replace('Z','+00:00'))
+            if captured.tzinfo is None or kickoff.tzinfo is None or actual.tzinfo is None:
+                continue
+            if not captured < min(kickoff,actual) or max(kickoff,actual)+timedelta(hours=3) > now:
                 continue
             payload = json.loads(r["payload"])
         except (TypeError, ValueError, KeyError):
@@ -67,17 +70,17 @@ def calibrate(probability: float, league: str, market: str, stats: dict) -> dict
     Bu tahminler hâlâ test edilmesi gereken istatistiksel tahminlerdir.
     """
     if not _valid(probability):
-        return {"p": probability, "raw_p": probability, "n": 0, "applied": False}
+        return {"p": probability, "raw_p": probability, "n": 0, "applied": False, "status":"insufficient_data"}
     group = stats.get((league, market, _bucket(probability)), {})
     n = group.get("n", 0)
     if n < MIN_SAMPLES:
-        return {"p": probability, "raw_p": probability, "n": n, "applied": False}
+        return {"p": probability, "raw_p": probability, "n": n, "applied": False, "status":"insufficient_data"}
     observed = group["wins"] / n
     expected = group["predicted_sum"] / n
     shift = max(-MAX_CORRECTION, min(MAX_CORRECTION,
                 (observed - expected) * n / (n + PRIOR_STRENGTH)))
     p = max(0.001, min(0.999, probability + shift))
-    return {"p": round(p, 4), "raw_p": probability, "n": n, "applied": True,
+    return {"p": round(p, 4), "raw_p": probability, "n": n, "applied": True, "status":"available",
             "observed_rate": round(observed, 4), "historical_predicted": round(expected, 4)}
 
 
@@ -89,4 +92,4 @@ def report(stats: dict) -> dict:
                        "n": n, "predicted": round(data["predicted_sum"] / n, 4),
                        "actual": round(data["wins"] / n, 4),
                        "sufficient": n >= MIN_SAMPLES})
-    return {"min_samples": MIN_SAMPLES, "groups": groups, "eligible_groups": sum(g["sufficient"] for g in groups)}
+    return {"status":"available" if any(g["sufficient"] for g in groups) else "insufficient_data", "min_samples": MIN_SAMPLES, "groups": groups, "eligible_groups": sum(g["sufficient"] for g in groups)}

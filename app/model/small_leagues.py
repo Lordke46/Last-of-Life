@@ -72,7 +72,13 @@ def bulletin_event(event: dict) -> dict:
                   "groups": available_groups},
     }
 
-    if event.get('odds_current') is False:
+    from ..quote_provenance import fresh
+    from datetime import datetime,timezone
+    from ..quote_provenance import timestamp
+    at=timestamp(event.get('kickoff'))
+    if (event.get('odds_current') is False or event.get('completed') or (at and at<=datetime.now(timezone.utc))
+            or (event.get('quote_provenance') is not None and not fresh(event))):
+        result['decision']={'status':'no_bet','reason':'no_current_prematch_quotes'}
         return result
     from .predict import candidate
     selection = candidate(markets, odds)

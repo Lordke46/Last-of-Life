@@ -20,7 +20,7 @@ from . import predict as P
 from .blend import BlendEval
 from ..scrapers.news import TR_ALIASES
 from .ratings import (Elo, Strengths, form_score, new_season, last_match_before, parse_ts, season_start,
-                      standings, team_form)
+                      standings, team_form, played_before)
 
 _cache: dict = {}
 _lock = threading.Lock()
@@ -51,10 +51,13 @@ def _refresh_if_stale():
 def _load(conn, league: str):
     rows = conn.execute("SELECT * FROM matches WHERE league=? ORDER BY kickoff", (league,)).fetchall()
     done, upcoming = [], []
+    names = {str(r[side+'_id']):r[side] for r in rows for side in ('home','away') if r[side+'_id']}
     for r in rows:
         m = dict(r)
+        for side in ('home','away'):
+            m[side] = names.get(str(m.get(side+'_id')),m[side])
         m["ts"] = parse_ts(m["kickoff"])
-        (done if m["completed"] else upcoming).append(m)
+        (done if m["completed"] and played_before(m, datetime.now(timezone.utc)) else upcoming).append(m)
     return done, upcoming
 
 
@@ -64,7 +67,7 @@ def news_scores(conn, league: str, at: datetime) -> dict:
     since = (at - timedelta(days=NEWS_LOOKBACK_DAYS)).isoformat()
     rows = conn.execute(
         "SELECT team, title, link, source, published FROM news "
-        "WHERE league=? AND published>=? ORDER BY published DESC", (league, since)).fetchall()
+        "WHERE league=? AND published>=? AND published<=? ORDER BY published DESC", (league, since,at.isoformat())).fetchall()
     by_team: dict[str, list[dict]] = {}
     for r in rows:
         by_team.setdefault(r["team"], []).append(dict(r))
@@ -97,6 +100,14 @@ class LeagueModel:
     # --- tek maç tahmini ---------------------------------------------------
     def predict(self, home: str, away: str, kickoff: datetime, strengths=None, elo=None,
                 history=None, news=None, detail=True) -> dict:
+        historical = history is not None or kickoff <= datetime.now(timezone.utc)
+        if historical:
+            history = [m for m in (self.done if history is None else history) if played_before(m,kickoff)]
+            strengths = strengths or Strengths(history,kickoff)
+            if elo is None:
+                elo = Elo()
+                for m in history:elo.update(m)
+            news = {}  # historical news ingestion times cannot currently be replayed
         st = strengths or self.strengths
         el = elo or self.elo
         hist = self.done if history is None else history
@@ -117,7 +128,10 @@ class LeagueModel:
         context_hist = self.all_history if history is None else hist
         form_h = team_form(context_hist, home, kickoff, team_id=self.team_ids.get(home))
         form_a = team_form(context_hist, away, kickoff, team_id=self.team_ids.get(away))
-        fs_h, fs_a = form_score(form_h), form_score(form_a)
+        league_h = team_form(hist,home,kickoff,team_id=self.team_ids.get(home))
+        league_a = team_form(hist,away,kickoff,team_id=self.team_ids.get(away))
+        # Competition strength weights aren't validated: domestic form drives the domestic adjustment.
+        fs_h, fs_a = form_score(league_h), form_score(league_a)
         f_adj = MODEL["form_coef"] * (fs_h - fs_a) / 2
         log_h += f_adj
         log_a -= f_adj
@@ -146,12 +160,16 @@ class LeagueModel:
         if not detail:
             return out
 
-        n_h = st.n_weighted.get(home, 0)
-        n_a = st.n_weighted.get(away, 0)
-        sample_coverage = min(1.0, min(n_h, n_a) / 15)
-        integrity = self.integrity(home, away, kickoff)
+        data_h = st.n_weighted.get(home, 0)
+        data_a = st.n_weighted.get(away, 0)
+        sample_coverage = min(1.0, min(data_h, data_a) / 15)
+        integrity = self.integrity(home, away, kickoff) if not historical else {
+            'history_complete':None,'context_checked':False,'source_fresh':False,
+            'history_scope':'historical_results_only','point_in_time':False,
+            'limitation':'Result availability uses a conservative 3-hour kickoff lag; historical ingestion timestamps unavailable.'}
+        table = {r['team']:r for r in standings(hist,season_start(hist))} if historical else self.pos
         data_q = min(sample_coverage, 1.0 if integrity['history_complete'] is True else .5 if integrity['history_complete'] is False else .75)
-        n_min = min(n_h, n_a)
+        n_min = min(data_h, data_a)
         pick = P.best_pick(mk["markets"])
         news_teams = sum(1 for t in (home, away) if news.get(t, {}).get("relevant", 0) > 0)
         out.update({
@@ -160,6 +178,7 @@ class LeagueModel:
             "news_teams": news_teams,
             "data_n": round(n_min, 2),
             "sample_coverage": round(sample_coverage, 4),
+            "data_coverage_score":round(sample_coverage,4),
             "data_integrity": integrity,
             "confidence_scope": "model_probability_and_data_not_empirical_accuracy",
             "data_quality": round(data_q, 4),  # Kapsam/tutarlılık skoru; gerçekleşmiş isabet değildir.
@@ -171,14 +190,15 @@ class LeagueModel:
                 "elo": {"home": round(elo_h), "away": round(elo_a), "diff_with_home_adv": round(diff),
                         "expected_home": round(el.expected(home, away), 3),
                         "lambda_home": round(lh_e, 3), "lambda_away": round(la_e, 3)},
-                "form": {"scope": "all_recorded_competitive_matches", "home": form_h, "away": form_a, "home_ppg": round(fs_h, 2), "away_ppg": round(fs_a, 2),
+                "form": {"scope": "all_recorded_competitive_matches", "home": form_h, "away": form_a, "model_adjustment_scope":"domestic_league_only", "league_home":league_h,"league_away":league_a,
+                         "home_ppg": round(fs_h, 2), "away_ppg": round(fs_a, 2),
                          "log_adj": round(f_adj, 3)},
                 "news": {"home": _news_view(nh), "away": _news_view(na), "log_adj": round(n_adj, 3),
                          "home_log": round(n_h, 4), "away_log": round(n_a, 4)},
-                "rest": {"scope": "all_recorded_competitive_matches", "coverage_verified": integrity['context_checked'], "home_days": rest["home"], "away_days": rest["away"],
+                "rest": {"scope": "all_recorded_competitive_matches", "coverage_verified": integrity['context_checked'], "measurement":"kickoff_to_kickoff_days", "result_availability_lag_hours":3, "home_days": rest["home"], "away_days": rest["away"],
                          "home_adj": r_adj_h, "away_adj": r_adj_a},
-                "table": {"home": self.pos.get(home), "away": self.pos.get(away)},
-                "h2h": self.h2h(home, away),
+                "table": {"home": table.get(home), "away": table.get(away)},
+                "h2h": self.h2h(home, away, before=kickoff),
             },
         })
         return out
@@ -201,12 +221,12 @@ class LeagueModel:
                 'context_checked': bool(known and all(r.get('schedule_checked') for r in records)),
                 'source_checked_at': at, 'source_fresh': fresh,
                 'standings_source': self.context.get('standings_url'),
-                'teams': {t: {'local': r.get('local'), 'source': r.get('official'), 'complete': r.get('complete')}
+                'teams': {t: {'local': r.get('local'), 'source': r.get('official'), 'complete': r.get('complete'),'consistency':r.get('consistency')}
                           for t, r in zip((home, away), records)},
                 'meaning': 'Veri kapsamı, güncellik ve sezon tutarlılığı; tahmin doğruluğu yüzdesi değildir.'}
 
-    def h2h(self, a: str, b: str, n: int = 6) -> list[dict]:
-        res = [m for m in self.done if {m["home"], m["away"]} == {a, b}]
+    def h2h(self, a: str, b: str, n: int = 6, before=None) -> list[dict]:
+        res = [m for m in self.done if {m["home"], m["away"]} == {a, b} and (before is None or played_before(m,before))]
         return [{"date": m["kickoff"][:10], "home": m["home"], "away": m["away"],
                  "score": f'{m["home_goals"]}-{m["away_goals"]}'} for m in res[-n:]][::-1]
 
@@ -248,7 +268,7 @@ def _news_view(n: dict) -> dict:
 
 
 def attach_context(conn, model, league):
-    from ..scrapers.team_context import load, league_records, season_year
+    from ..scrapers.team_context import load, league_records, season_year, consistency
     context = load(conn, league)
     year = season_year(datetime.now(timezone.utc))
     current = league_records(conn, league, datetime(year,7,1,tzinfo=timezone.utc), datetime.now(timezone.utc))
@@ -261,7 +281,8 @@ def attach_context(conn, model, league):
             record['complete'] = None
             newer_results = True
         else:
-            record['complete'] = all(actual[k] == official[k] for k in ('p','gf','ga'))
+            record['consistency'] = consistency(official,actual)
+            record['complete'] = record['consistency']['results_match']
     names = {str(m[side+'_id']): m[side] for m in (*model.done, *model.upcoming)
              for side in ('home', 'away') if m.get(side+'_id')}
     if names:
@@ -370,7 +391,8 @@ def backtest(league: str, min_history: int | None = None, step: int = 1) -> dict
             blend_eval.add(p, logged[m["id"]], hg, ag)
     if not n:
         return {"league": league, "n": 0}
-    return {"league": league, "n": n, "from": done[min_history]["kickoff"][:10],
+    return {"league": league, "n": n, "evaluation_scope":"historical_result_reconstruction",
+            "point_in_time_data_verified":False, "limitation":"Historical result ingestion times are unavailable; forward snapshots are the primary evidence.", "from": done[min_history]["kickoff"][:10],
             "accuracy_1x2": round(hit / n, 3), "brier": round(brier / n, 3),
             "logloss": round(logloss / n, 3), "accuracy_ou25": round(ou_hit / n, 3),
             "blend": blend_eval.result()}

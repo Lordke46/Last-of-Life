@@ -166,6 +166,8 @@ def _sync_iddaa(conn, retries: int = 3) -> tuple[bool, dict]:
         raise
     except Exception as exc:
         conn.rollback()
+        from . import quote_provenance
+        quote_provenance.failed(conn, exc)
         set_meta(conn, "iddaa_last_error", str(exc))
         last = get_meta(conn, "iddaa_last_update")
         stale = not last or _now() - parse_ts(last) > timedelta(hours=IDDAA_MAX_STALE_HOURS)

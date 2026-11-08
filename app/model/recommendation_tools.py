@@ -6,6 +6,9 @@ uyumu gözlenen bilgidir; başarı garantisi veya olasılığa eklenen bir bonus
 import math
 from datetime import datetime, timedelta, timezone
 
+from ..quote_provenance import fresh as quotes_fresh
+from .decision_quality import reasons
+from ..config import MODEL
 from .predict import PICK_MIN_ODDS, PICK_MAX_ODDS, PICK_MIN_P, PICK_MARKETS
 
 
@@ -29,7 +32,7 @@ def analyse(prediction, now=None):
     now = now or datetime.now(timezone.utc)
     kickoff = _ts(prediction.get('kickoff'))
     updated = _ts(prediction.get('iddaa_updated_at'))
-    fresh = bool(updated and now - timedelta(hours=2) <= updated <= now + timedelta(minutes=5))
+    fresh = quotes_fresh(prediction,now=now)
     actionable = bool(fresh and kickoff and kickoff > now and prediction.get('odds_current') is not False)
     small = bool(prediction.get('small_league'))
     n = prediction.get('data_n')
@@ -44,6 +47,8 @@ def analyse(prediction, now=None):
         warnings.append('Takım geçmişi sınırlı; modelin hata payı daha yüksek olabilir.')
     if (prediction.get('data_integrity') or {}).get('history_complete') is False:
         warnings.append('Sezon maç kayıtları kaynak puan tablosuyla uyuşmuyor; veri tamlığı doğrulanamadı.')
+    if any(v.get('disagreement_review_required') for v in prediction.get('markets',{}).values()):
+        warnings.append('Büyük model–piyasa ayrışması var; bu fark doğrulanmış fiyat avantajı değildir.')
     options = []
     for market, item in prediction.get('markets', {}).items():
         p = item.get('p')
@@ -67,11 +72,11 @@ def analyse(prediction, now=None):
                         'model_p': model_p if _probability(model_p) else None,
                         'market_p': market_p if _probability(market_p) else None,
                         'disagreement_pp': round(gap * 100, 1) if gap is not None else None,
-                        'model_market_disagree': gap is not None and gap >= .15,
+                        'model_market_disagree': gap is not None and gap*100 >= MODEL.get('disagreement_review_pp',20),
                         'movement': movement,
                         'in_preferred_band': PICK_MIN_ODDS <= quote <= PICK_MAX_ODDS,
                         'meets_probability_threshold': p >= PICK_MIN_P,
-                        'actionable': actionable})
+                        'actionable': actionable and not reasons(prediction,market,now)})
     in_band = [c for c in options if c['in_preferred_band']]
     # Fiyat avantajı ayrı sıralamadır; varsayılan isabet listesini veya Banko'yu kapatmaz.
     by_probability = sorted(in_band, key=lambda c: (-c['p'], -c['estimated_value'], c['market']))[:3]

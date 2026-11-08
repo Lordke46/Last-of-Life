@@ -149,6 +149,10 @@ def summarize(item: dict) -> dict:
         return {'market':market,'headline':headline(market) if market else label,
                 'title':text,'reason':reason_text,'odds':odd,'level':level,
                 'level_label':{'Piyasa adayı':'Piyasa verisi','Model ön tahmini':'Oran bekleniyor','Aday seçenek':'Eşik altında','Oran bandı dışı':'Bant dışı'}.get(label,label),'recommendation_label':label}
+    if (item.get('decision') or {}).get('status') == 'no_bet' and not item.get('result_only') and not item.get('is_archived'):
+        return summary(None,'Bu maç için uygun öneri yok',
+                       'Güncellik, veri tutarlılığı veya model–piyasa ayrışması kontrolünü geçen seçenek bulunamadı.',
+                       label='Bahis önerilmiyor')
     if item.get('result_only'):
         h,a=item.get('home_goals'),item.get('away_goals')
         if item.get('completed') and h is not None and a is not None:

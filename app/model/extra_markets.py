@@ -30,7 +30,7 @@ def for_match(lambda_home: float, lambda_away: float, iddaa_odds: dict | None = 
         if match:
             half_totals[match.group(1)] = None
         match = _HANDICAP.match(line)
-        if match:
+        if match and float(match.group(1)).is_integer():
             handis.setdefault(match.group(1), {})
     for line in half_totals:
         result[f"İY A{line}"] = 0.0
@@ -62,7 +62,30 @@ def for_match(lambda_home: float, lambda_away: float, iddaa_odds: dict | None = 
             for a, probability in enumerate(row):
                 result[f"Handikap {line} {_result(h + float(line), a)}"] += probability
     out = {key: _out(probability) for key, probability in result.items()}
+    for key,item in out.items():
+        item['probability_source']='experimental_score_model'
+        item['settlement_definition'] = {'period':'first_half' if key.startswith('İY ') else 'half_time_and_full_time',
+            'rule':'Match result compares goals; totals compare goals with line; integer totals exclude push mass.',
+            'selection':key}
     from .blend import devig
+    from .decision_quality import comparison
+    groups = {'first_half_1x2':[f'İY {v}' for v in ('1','X','2')],
+              'half_full':[f'İY/MS {a}/{b}' for a in ('1','X','2') for b in ('1','X','2')]}
+    groups.update({'half_total_'+line:[f'İY A{line}',f'İY Ü{line}'] for line in half_totals if not float(line).is_integer()})
+    for group,keys in groups.items():
+        probs = devig([(iddaa_odds or {}).get(k) for k in keys])
+        for i,key in enumerate(keys):
+            out[key].update(model_p=out[key]['p'],market_p=round(probs[i],4) if probs else None,
+                            model_assumptions='Fixed goal share; independent half score distributions; not empirically validated')
+            out[key].update(comparison(out[key],group=group,
+                book=sum(1/iddaa_odds[k] for k in keys) if probs else None))
+    for line in half_totals:
+        if float(line).is_integer():
+            keys=[f'İY A{line}',f'İY Ü{line}']
+            push=max(0,1-sum(out[k]['p'] for k in keys))
+            for key in keys:
+                out[key].update(fair=None,suggested=None,push_probability=round(push,4))
+                out[key]['settlement_definition']['rule']='First-half integer total: equal goals refund stake; p excludes push mass.'
     for line in handis:
         keys = [f"Handikap {line} {side}" for side in ('1', 'X', '2')]
         probs = devig([(iddaa_odds or {}).get(key) for key in keys])
@@ -75,7 +98,9 @@ def for_match(lambda_home: float, lambda_away: float, iddaa_odds: dict | None = 
                                                'selection':('1','X','2')[i],
                                                'rule':'Compare home_goals + home_goal_adjustment with away_goals; 1 greater, X equal, 2 smaller'},
                         model_market_gap_pp=round(abs(item['p']-market_p)*100,1) if market_p is not None else None)
+            item['settlement_definition']['market_type']='three_way_european_handicap'
+            item.update(comparison(item,group='handicap_'+line,book=sum(1/(iddaa_odds or {})[key] for key in keys) if probs else None))
     for key in (iddaa_odds or {}):
         if key.startswith(("Korner ", "Kart ")):
-            out[key] = {"p": None, "fair": None, "suggested": None, "model_available": False}
+            out[key] = {"p": None, "fair": None, "suggested": None, "model_available": False, "validation_status":"unmodelled", "settlement_definition":None}
     return out

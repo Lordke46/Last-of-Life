@@ -15,8 +15,8 @@ from app.model.coupons import (_choices, _coupon, select_banko, select_banko_alt
                                small_league_recommendation)
 
 
-def pred(mid, markets, kickoff="2026-10-17T14:00Z", league="eng.1"):
-    return {"id": mid, "league": league, "kickoff": kickoff, "home": f"H{mid}", "away": f"A{mid}",
+def pred(mid, markets, kickoff=None, league="eng.1"):
+    return {"id": mid, "league": league, "kickoff": kickoff or (datetime.now(timezone.utc)+timedelta(days=1)).isoformat(), "home": f"H{mid}", "away": f"A{mid}",
             "data_n":20, "markets": {m: {"p": p, "suggested": s, "fair": round(1 / p, 2)} for m, (p, s) in markets.items()},
             # Test fixtures have synthetic *verified* calibration; production never invents it.
             "calibration_by_market": {m: {"p": p, "n": 100, "applied": True} for m, (p, _) in markets.items()}}
