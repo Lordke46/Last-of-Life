@@ -129,6 +129,8 @@ def format_coupon_message(day: str, coupons: list[dict], banko_note: str | None 
                     parts.append(f"piyasa %{p['market_probability']*100:.0f}")
                 if p.get("calibration_applied"):
                     parts.append(f"kalibrasyon {p['calibration_n']} geçmiş seçim")
+                elif "calibration_applied" in p:
+                    parts.append(f"kalibrasyon verisi sınırlı ({p.get('calibration_n', 0)}/30); model/piyasa tahmini")
                 if isinstance(p.get("data_n"), (int, float)):
                     parts.append(f"veri ~{p['data_n']:.0f} maç")
                 if isinstance(p.get("value"), (int, float)):
@@ -265,7 +267,7 @@ def post_daily_coupons(now: datetime, send, force: bool = False, day: date | Non
         coupons.append(_compact_coupon(copy))
     if not coupons:
         return "kupon: uygun kupon yok"
-    note = "Yeterli kalibre edilmiş, pozitif tahmini değerli 2 maç bulunamadı."
+    note = "Güncel gerçek oran, olasılık, takım verisi ve kupon koşullarına uyan en az 2 farklı maç bulunamadı."
     sent = _post_once(key, "coupon", now, json.dumps(coupons, ensure_ascii=False),
                       format_coupon_message(key, coupons, banko_note=note), send)
     return "kupon: gönderildi" if sent else "kupon: başka çalıştırma gönderiyor/gönderdi"

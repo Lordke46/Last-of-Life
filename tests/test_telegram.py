@@ -66,6 +66,13 @@ class MessageTest(unittest.TestCase):
         self.assertIn("BANKO", text)
         self.assertNotIn("SÜRPRİZ", text)
 
+    def test_banko_message_marks_limited_calibration(self):
+        p = pick(1, "1")
+        p.update(calibration_applied=False, calibration_n=18)
+        text = tg.format_coupon_message("2026-10-17", [coupon("banko", [p])])
+        self.assertIn("kalibrasyon verisi sınırlı (18/30)", text)
+        self.assertIn("model/piyasa tahmini", text)
+
     def test_banko_message_explains_probability_and_price(self):
         p = pick(1, "1", odds=1.8, p=.7)
         p.update(model_probability=.74, market_probability=.64, calibration_n=53,

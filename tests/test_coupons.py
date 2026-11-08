@@ -54,16 +54,24 @@ class BankoTest(unittest.TestCase):
         self.assertTrue(all(1.4<=p['odds']<=2.3 and p['odds_source']=='iddaa' for p in picks))
         self.assertNotIn('1X',[p['market'] for p in picks])
 
-    def test_banko_rejects_negative_value_even_with_high_probability(self):
+    def test_hit_rate_policy_does_not_require_positive_expected_profit(self):
         entries = [entry(i, {"1": (.65, 1.40)}) for i in (1, 2, 3)]
-        self.assertEqual(select_banko(entries), [])
+        picks = select_banko(entries)
+        self.assertEqual(len(picks), 2)
+        self.assertTrue(all(p["value"] < 0 for p in picks))
 
-    def test_banko_rejects_uncalibrated_estimates(self):
+    def test_banko_discloses_uncalibrated_estimates_without_blocking_them(self):
         entries = [entry(i, {"1": (.75, 1.65)}) for i in (1, 2, 3)]
         for prediction, _ in entries:
             prediction["calibration_by_market"] = {}
         entries = [(prediction, _choices(prediction, {"1": 1.65})) for prediction, _ in entries]
-        self.assertEqual(select_banko(entries), [])
+        picks = select_banko(entries)
+        self.assertEqual(len(picks), 2)
+        self.assertTrue(all(not p["calibration_applied"] for p in picks))
+        coupon = _coupon("banko", picks, "n")
+        self.assertEqual(coupon["calibration_status"], "limited")
+        self.assertIn("0/2", coupon["calibration_note"])
+        self.assertIn("henüz doğrulanmadı", coupon["calibration_note"])
 
     def test_stale_odds_are_not_counted_as_missing_quotes(self):
         old = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
@@ -78,7 +86,7 @@ class BankoTest(unittest.TestCase):
         self.assertEqual(report["no_market_quote"], 0)
         self.assertGreaterEqual(report["odds_age_minutes"], 180)
 
-    def test_calibration_gap_is_reported_without_lowering_the_threshold(self):
+    def test_calibration_gap_is_disclosed_without_fabricating_calibration(self):
         self.assertEqual(cp.calibration.MIN_SAMPLES, 30)
         entries = []
         for i in (1, 2, 3):
@@ -86,16 +94,45 @@ class BankoTest(unittest.TestCase):
             prediction["calibration_by_market"] = {"1": {"p": 0.7, "n": 18, "applied": False}}
             entries.append((prediction, _choices(prediction, {"1": 1.6})))
         report = {}
-        self.assertEqual(cp._select_balanced(entries, "banko", 1, report), [])
+        alternatives = cp._select_balanced(entries, "banko", 1, report)
+        self.assertEqual(len(alternatives[0]), 2)
+        self.assertTrue(all(not p["calibration_applied"] and p["calibration_n"] == 18 for p in alternatives[0]))
         self.assertEqual((report["calibration_best_n"], report["calibration_min_samples"]), (18, 30))
         self.assertGreater(report["calibration_insufficient"], 0)
 
     def test_banko_diagnostics_explain_missing_picks(self):
-        entries = [entry(i, {"1": (.62, 1.40)}) for i in (1, 2)]
+        entries = [entry(i, {"1": (.61, 1.40)}) for i in (1, 2)]
         report = {}
         self.assertEqual(cp._select_balanced(entries, "banko", 1, report), [])
-        self.assertGreater(report["negative_or_small_edge"], 0)
+        self.assertGreater(report["low_probability"], 0)
         self.assertEqual(report["selected_coupons"], 0)
+
+    def test_probability_ranks_before_confidence_score_and_price(self):
+        first = entry(1, {"1": (.80, 1.50)})
+        first[0]["data_n"] = 12
+        picks = select_banko([first, entry(2, {"1": (.71, 1.60)}), entry(3, {"1": (.69, 1.42)})])
+        self.assertEqual({p["id"] for p in picks}, {1, 2})
+
+    def test_applied_calibration_still_controls_the_probability_threshold(self):
+        prediction = pred(1, {"1": (.75, 1.65)})
+        prediction["calibration_by_market"]["1"].update(p=.60)
+        entries = [(prediction, _choices(prediction, {"1": 1.65})), entry(2, {"1": (.75, 1.65)})]
+        self.assertEqual(select_banko(entries), [])
+
+    def test_raw_model_probability_is_not_replaced_by_calibrated_probability(self):
+        prediction = pred(1, {"1": (.75, 1.65)})
+        prediction["calibration_by_market"]["1"].update(p=.68)
+        choice = _choices(prediction, {"1": 1.65})[0]
+        view = cp._match_view(prediction, choice)
+        self.assertEqual(view["p"], .68)
+        self.assertEqual(view["model_probability"], .75)
+
+    def test_unapplied_calibration_never_overrides_raw_probability(self):
+        prediction = pred(1, {"1": (.60, 1.65)})
+        prediction["calibration_by_market"]["1"].update(p=.90, applied=False)
+        choice = _choices(prediction, {"1": 1.65})[0]
+        self.assertEqual(choice["p"], .60)
+        self.assertFalse(choice["calibration_applied"])
 
     def test_sparse_data_and_fake_odds_are_not_banko_candidates(self):
         entries=[entry(i,{'1':(.8,1.6)}) for i in (1,2)]

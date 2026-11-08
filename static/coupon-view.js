@@ -54,10 +54,12 @@
     const shareActions = picks.length && share
       ? `<div class="coupon-share-actions"><button type="button" class="btn" data-share-coupon data-share-type="${esc(share.kind)}" data-share-index="${share.index}">Paylaş</button><select aria-label="Görsel boyutu" data-share-size><option value="square">Kare 1080×1080</option><option value="story">Story 1080×1920</option></select></div>`
       : "";
+    const calibrationNote = coupon.calibration_note
+      ? `<p class="coupon-calibration"><span class="badge ${coupon.calibration_status === "limited" ? "b-warn" : "b-info"}">${coupon.calibration_status === "limited" ? "Kalibrasyon verisi sınırlı" : "Kalibrasyon uygulandı"}</span> ${esc(coupon.calibration_note)}</p>` : "";
     const publication = coupon.publication === "published"
       ? `<p class="muted">Günün yayımlanan kuponu. Geçmiş ve Telegram bu kuponu kullanır; oranlar yayımlandığı andaki değerlerdir. Başlamış maçlar yeniden oynanamaz.</p>`
       : coupon.publication === "live" ? `<p class="muted">Güncel alternatif · günün kayıtlı kuponundan farklı olabilir.</p>` : "";
-    return `<div class="card coupon-card"><div class="row-between"><h3>${esc(title)}</h3><span>${source(coupon, picks)} <span class="badge ${esc(badgeClass)}">${picks.length} maç</span></span></div>${publication}${content}${totals}${shareActions}</div>`;
+    return `<div class="card coupon-card"><div class="row-between"><h3>${esc(title)}</h3><span>${source(coupon, picks)} <span class="badge ${esc(badgeClass)}">${picks.length} maç</span></span></div>${publication}${calibrationNote}${content}${totals}${shareActions}</div>`;
   }
 
   function alternatives(data, type) {
@@ -81,7 +83,11 @@
       const when = Number.isFinite(age) ? `Oranlar ${Math.trunc(age)} dk önce alındı. ` : "";
       lines.push(`${when}Canlı kupon kapalı: iddaa fiyatı 2 saatten eski (${diag.stale_odds} maç).`);
     }
-    if (type === "banko" && diag.calibration_insufficient) {
+    if (type === "banko" && diag.selection_policy === "hit_rate_v3" && !diag.eligible_matches && !diag.stale_odds) {
+      lines.push("Henüz başlamamış maçlarda %62 olasılık, 1,40–2,30 gerçek oran ve yeterli takım verisi koşullarına uyan aday bulunamadı.");
+    } else if (type === "banko" && diag.selection_policy === "hit_rate_v3" && diag.eligible_matches) {
+      lines.push(`${diag.eligible_matches} aday var; farklı maç sayısı, toplam oran veya minimum bahis adedi koşullarında uygun kupon oluşmadı.`);
+    } else if (type === "banko" && diag.calibration_insufficient) {
       const best = Number.isFinite(Number(diag.calibration_best_n)) ? Math.trunc(Number(diag.calibration_best_n)) : 0;
       const need = Number.isFinite(Number(diag.calibration_min_samples)) ? Math.trunc(Number(diag.calibration_min_samples)) : 30;
       lines.push(`Banko için aynı lig, pazar ve olasılık diliminde en az ${need} sonuçlanmış kayıt gerekir. En dolu dilim ${best}/${need}.`);

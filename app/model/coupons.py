@@ -23,7 +23,7 @@ LOOKAHEAD_DAYS = 60
 
 BANKO_MIN_P, BANKO_MIN_ODDS, BANKO_MAX_ODDS = .62, 1.40, 2.30
 BANKO_MIN_TOTAL_P = .25
-BANKO_MIN_EDGE = .03  # en az %3 tahmini beklenen değer; geçmiş kalibrasyon zorunlu
+BANKO_MIN_EDGE = None  # İsabet önceliğinde pozitif beklenen değer bir eleme koşulu değildir.
 BANKO_MIN_DATA_N = 12
 BANKO_PICKS, BANKO_POOL, BANKO_ALTERNATIVES = (2, 3), 14, 3
 SURPRISE_MIN_P, SURPRISE_MAX_P = .38, .70
@@ -31,7 +31,7 @@ SURPRISE_MIN_ODDS, SURPRISE_MAX_ODDS = 1.80, 3.50
 SURPRISE_MIN_TOTAL_ODDS, SURPRISE_MAX_TOTAL_ODDS = 8.0, 25.0
 SURPRISE_PICKS, SURPRISE_POOL, SURPRISE_ALTERNATIVES = (3, 4), 14, 3
 SURPRISE_MARKETS = SUPPORTED_MARKETS
-SELECTION_POLICY = 'balanced_v2'
+SELECTION_POLICY = 'hit_rate_v3'
 
 MAX_COUPON_ODDS_AGE = timedelta(hours=2)
 
@@ -90,8 +90,9 @@ def _choices(prediction: dict, iddaa_odds: dict) -> list[dict]:
             continue
         odds, source = (round(theirs, 2), "iddaa") if theirs and theirs >= 1.01 else (claude, "claude")
         calib = (prediction.get("calibration_by_market") or {}).get(market) or {}
-        out.append({"market": market, "p": calib.get("p", item["p"]), "raw_p": item["p"],
-                    "calibration_n": calib.get("n", 0), "calibration_applied": calib.get("applied", False),
+        calibrated = bool(calib.get("applied") and calib.get("n", 0) >= calibration.MIN_SAMPLES)
+        out.append({"market": market, "p": calib["p"] if calibrated else item["p"], "raw_p": item["p"],
+                    "calibration_n": calib.get("n", 0), "calibration_applied": calibrated,
                     "odds": odds, "odds_source": source,
                     "iddaa_odds": theirs if source == "iddaa" else None, "claude_odds": claude,
                     "fair": item.get("fair"), "min_matches": prediction.get("iddaa_min_matches", {}).get(market, 1)})
@@ -103,7 +104,7 @@ def _match_view(prediction: dict, choice: dict) -> dict:
             "league_name": prediction.get("league_name") or LEAGUES.get(prediction["league"], {}).get("name", prediction["league"]),
             "kickoff": prediction["kickoff"],
             "home": prediction["home"], "away": prediction["away"], **choice,
-            "model_probability": prediction.get("markets", {}).get(choice["market"], {}).get("model_p", choice["p"]),
+            "model_probability": prediction.get("markets", {}).get(choice["market"], {}).get("model_p", choice.get("raw_p", choice["p"])),
             "market_probability": prediction.get("markets", {}).get(choice["market"], {}).get("market_p"),
             "data_n": prediction.get("data_n", 0),
             "news_effect": (prediction.get("factors") or {}).get("news", {}).get("log_adj"),
@@ -125,7 +126,16 @@ def small_league_recommendation(prediction: dict, choices: list[dict] | None = N
 def _coupon(kind: str, picks: list[dict], note: str) -> dict:
     sources = {p["odds_source"] for p in picks}
     source = sources.pop() if len(sources) == 1 else ("karışık" if sources else None)
-    return {"type": kind, "selection_policy": SELECTION_POLICY, "picks": picks, "stake_note": note, "odds_source": source,
+    calibrated = sum(bool(p.get("calibration_applied")) for p in picks)
+    calibration_status = "complete" if picks and calibrated == len(picks) else "limited" if picks else "unavailable"
+    calibration_note = (
+        f"{calibrated}/{len(picks)} seçimde geçmiş sonuçlarla kalibrasyon uygulandı. "
+        + ("Kalan seçimler model/piyasa tahminidir; gerçekleşmiş başarıları henüz doğrulanmadı."
+           if calibration_status == "limited" else "Olasılıklar tahmindir; garanti değildir.")
+    ) if kind == "banko" and picks else None
+    return {"type": kind, "selection_policy": SELECTION_POLICY if kind == "banko" else "balanced_v2",
+            "calibration_status": calibration_status, "calibration_note": calibration_note,
+            "picks": picks, "stake_note": note, "odds_source": source,
             "iddaa_picks": sum(p["odds_source"] == "iddaa" for p in picks),
             "total_odds": round(math.prod(p["odds"] for p in picks), 2) if picks else 0,
             "total_probability": round(math.prod(p["p"] for p in picks), 4) if picks else 0}
@@ -143,7 +153,7 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
               "low_probability": 0, "odds_out_of_range": 0,
               "calibration_insufficient": 0, "calibration_best_n": 0,
               "calibration_min_samples": calibration.MIN_SAMPLES,
-              "negative_or_small_edge": 0,
+              "selection_policy": SELECTION_POLICY if banko else "balanced_v2",
               "eligible_matches": 0, "combinations_rejected": 0, "valid_combinations": 0}
     for prediction, choices in entries:
         mid = str(prediction.get('id',''))
@@ -164,30 +174,28 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
             if choice['odds_source'] != 'iddaa' or choice['market'] not in SUPPORTED_MARKETS:
                 counts["no_market_quote"] += 1
                 continue
-            if not p_min <= choice['p'] <= p_max:
+            if isinstance(choice.get('p'), bool) or not isinstance(choice.get('p'), (int, float)) or not math.isfinite(choice['p']) or not p_min <= choice['p'] <= p_max:
                 counts["low_probability"] += 1
                 continue
             if not o_min <= choice['odds'] <= o_max:
                 counts["odds_out_of_range"] += 1
                 continue
-            if banko and choice.get("calibration_n", 0) < calibration.MIN_SAMPLES:
+            if banko and not choice.get("calibration_applied"):
+                # Az ileriye dönük kayıt, takım modelinin hiç çalışmaması demek değildir.
+                # Tahmini düzeltmeden kullan; eksik kanıtı kuponda açıkça göster.
                 counts["calibration_insufficient"] += 1
                 counts["calibration_best_n"] = max(counts["calibration_best_n"], int(choice.get("calibration_n") or 0))
-                continue
-            if banko and choice["p"] * choice["odds"] - 1 < BANKO_MIN_EDGE:
-                counts["negative_or_small_edge"] += 1
-                continue
             conf = P.confidence(choice['p'], n)
             candidates.append({**choice, **conf, 'value': round(choice['p']*choice['odds']-1,4)})
         if candidates:
             counts["eligible_matches"] += 1
             # Sabit oran bandında önce olasılık, sonra veri güveni. Küçük oran için bütün pazarlar bastırılmaz.
-            candidates.sort(key=lambda c:(c['confidence'],c['p'],c['odds']),reverse=True)
+            candidates.sort(key=lambda c:(c['p'],c['confidence'],c['value']) if banko else (c['confidence'],c['p'],c['odds']),reverse=True)
             selected=[candidates[0]]
             higher=max(candidates,key=lambda c:c['odds'])
             if higher['market'] != selected[0]['market']: selected.append(higher)
             pool.append((prediction,selected)); seen.add(mid)
-    pool.sort(key=lambda x:(-x[1][0]['confidence'],-x[1][0]['p'],x[0]['kickoff']))
+    pool.sort(key=lambda x:(-x[1][0]['p'],-x[1][0]['confidence'],x[0]['kickoff']) if banko else (-x[1][0]['confidence'],-x[1][0]['p'],x[0]['kickoff']))
     pool = pool[:BANKO_POOL if banko else SURPRISE_POOL]
     sizes = BANKO_PICKS if banko else SURPRISE_PICKS
     candidates = []
@@ -209,7 +217,9 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
                 counts["valid_combinations"] += 1
                 signature = frozenset((str(p['id']),c['market']) for p,c in combo)
                 tier = min({'Düşük':0,'Orta':1,'Yüksek':2}[c['confidence_label']] for _,c in combo)
-                candidates.append(((tier,probability,sum(c['confidence'] for _,c in combo)/size,-size),combo,signature))
+                score = ((probability, sum(c['confidence'] for _,c in combo)/size, -size) if banko else
+                         (tier, probability, sum(c['confidence'] for _,c in combo)/size, -size))
+                candidates.append((score,combo,signature))
     candidates.sort(key=lambda x:x[0],reverse=True)
     out, used = [], set()
     for _, combo, signature in candidates:
@@ -317,7 +327,7 @@ def build_coupons(target: date) -> dict:
     for pick in small_coupon["picks"]:
         pick["league_name"] = grouped[pick["id"]]["league_name"]
         pick["country"] = grouped[pick["id"]]["country"]
-    banko_note = "Kalibrasyonu yeterli, en az %3 tahmini değer avantajlı, 12 ağırlıklı maç geçmişli 2–3 seçim. Banko garanti değildir."
+    banko_note = "İsabet öncelikli: gerçek oran 1,40–2,30; tahmini olasılık en az %62; en az 12 ağırlıklı maç verisi; 2–3 farklı maç. Kalibrasyon varsa uygulanır, eksikliği belirtilir. Banko garanti değildir."
     surprise_note = "Sürpriz: gerçek oran 1,80–3,50; olasılık %38–70; 3–4 farklı maç; toplam oran 8–25. Daha yüksek risk taşır."
     banko_diagnostics = {}
     banko_alternatives = [_coupon("banko", picks, banko_note)
@@ -339,6 +349,7 @@ def build_coupons(target: date) -> dict:
         "rules": {"banko_min_probability": BANKO_MIN_P, "banko_min_total_probability": BANKO_MIN_TOTAL_P,
                   "banko_min_edge": BANKO_MIN_EDGE, "banko_min_data_n": BANKO_MIN_DATA_N,
                   "banko_min_calibration_samples": calibration.MIN_SAMPLES,
+                  "banko_calibration_required": False, "banko_objective": "hit_probability",
                   "banko_min_odds": BANKO_MIN_ODDS,
                   "surprise_probability_range": [SURPRISE_MIN_P, SURPRISE_MAX_P],
                   "surprise_min_total_odds": SURPRISE_MIN_TOTAL_ODDS},
