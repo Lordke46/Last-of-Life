@@ -252,6 +252,7 @@ function renderSmallMatch(m) {
     </div>
     ${window.RecommendationTools?.render(m, Slip.button, Simple.headline) || ""}
     ${detail("Detaylar", odds.length ? `<table><tr><th class="l">Seçenek</th><th>iddaa oranı</th><th></th></tr>${marketRows}</table>` : `<p class="muted">Bu maç için oran verisi yok.</p>`)}`;
+  window.MatchPrompt?.mount(m, $("#modalBody"));
 }
 
 function marketText(key, m) {
@@ -321,6 +322,7 @@ async function openMatch(id, competitionId = null) {
     <div class="card hero">${hero}</div>
     ${window.RecommendationTools?.render(m, Slip.button, Simple.headline) || ""}
     ${detail("Detaylar", `<h4>Diğer seçenekler</h4>${markets}<h4>Takımlar</h4>${compare}<div id="matchInsights"></div><h4>Haberler</h4>${news}`)}`;
+  window.MatchPrompt?.mount(m, $("#modalBody"));
   $("#modal").classList.remove("hidden");
   renderOddsHistory(m);
   renderMatchInsights(m);
