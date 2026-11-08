@@ -262,6 +262,22 @@ class RateLimitTest(AuthTestBase):
         codes = [self.client.post("/api/auth/forgot", json={"email": "u@example.com"}).status_code for _ in range(4)]
         self.assertEqual(codes, [200, 200, 200, 429])
 
+    def test_register_limited_per_email(self):
+        codes = [self.register("same@example.com").status_code for _ in range(4)]
+        self.assertEqual(codes, [200, 409, 409, 429])
+        self.assertEqual(self.register("other@example.com").status_code, 200)
+
+    def test_register_limit_ignores_spoofed_forwarded_for(self):
+        headers = {"x-real-ip": "203.0.113.8", "x-forwarded-for": "1.1.1.1"}
+        codes = [self.client.post("/api/auth/register", headers=headers,
+                                  json={"email": f"a{i}@example.com", "password": PW}).status_code
+                 for i in range(11)]
+        self.assertEqual(codes[-1], 429)
+        again = self.client.post("/api/auth/register",
+                                 headers={"x-real-ip": "203.0.113.8", "x-forwarded-for": "9.9.9.9"},
+                                 json={"email": "fresh@example.com", "password": PW})
+        self.assertEqual(again.status_code, 429)
+
     def test_register_limited_per_ip(self):
         codes = [self.register(f"u{i}@example.com").status_code for i in range(11)]
         self.assertEqual(codes[-1], 429)
