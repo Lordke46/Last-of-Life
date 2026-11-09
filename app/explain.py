@@ -149,6 +149,20 @@ def summarize(item: dict) -> dict:
         return {'market':market,'headline':headline(market) if market else label,
                 'title':text,'reason':reason_text,'odds':odd,'level':level,
                 'level_label':{'Piyasa adayı':'Piyasa verisi','Model ön tahmini':'Oran bekleniyor','Aday seçenek':'Eşik altında','Oran bandı dışı':'Bant dışı'}.get(label,label),'recommendation_label':label}
+    from .match_state import describe
+    lifecycle=describe(item)
+    phase,price=lifecycle['phase'],lifecycle['price_status']
+    if phase=='inactive':
+        return summary(None,'Maç ertelendi, durduruldu veya iptal edildi; yeni bahis önerisi üretilmez.',label='Maç aktif değil')
+    if phase=='started_result_pending':
+        return summary(None,'Başlama saati geçti; canlı durum veya kesin sonuç henüz doğrulanmadı. Gösterilen oranlar maç öncesi kayıttır.',label='Sonuç bekleniyor')
+    if phase=='completed':
+        h,a=item.get('home_goals'),item.get('away_goals')
+        return summary(None,f"{item['home']} {h}–{a} {item['away']}" if h is not None and a is not None else 'Maç tamamlandı; kesin skor bekleniyor.',label='Bitti')
+    if price=='removed_from_bulletin':
+        return summary(None,'Maç henüz başlamadı ancak son bültende bulunmuyor. Son kayıtlı oranlar güncel fiyat olarak kullanılamaz.',label='Bültende yok')
+    if price=='unverified_or_stale' and item.get('quote_provenance') is not None:
+        return summary(None,'Maçın oranları henüz güncel kaynaktan doğrulanamadı. Son kayıtlı fiyatlar gösteriliyor.',label='Oran yenileniyor')
     if (item.get('decision') or {}).get('status') == 'no_bet' and not item.get('result_only') and not item.get('is_archived'):
         return summary(None,'Bu maç için uygun öneri yok',
                        'Güncellik, veri tutarlılığı veya model–piyasa ayrışması kontrolünü geçen seçenek bulunamadı.',

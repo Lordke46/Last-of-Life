@@ -128,7 +128,7 @@ function matchCard(m) {
       </div>
       <div class="time">${live ? liveBadge(live) : fmtDateTime(m.kickoff)}</div>
     </div>
-    <div class="bulletin-prices" aria-label="Maç sonucu oranları">${["1","X","2"].map((key)=>`<span>MS ${key === "X" ? "0" : key} <b>${m.iddaa_odds?.[key] == null ? "—" : Number(m.iddaa_odds[key]).toFixed(2)}</b></span>`).join("")}<small>${m.result_only ? "Geçmiş maç" : m.odds_current === false && m.is_archived ? "Arşiv oranları" : m.iddaa_updated_at ? "Oran: "+fmtTime(m.iddaa_updated_at) : "İddaa oranı bekleniyor"}</small></div>
+    <div class="bulletin-prices" aria-label="Maç sonucu oranları">${["1","X","2"].map((key)=>`<span>MS ${key === "X" ? "0" : key} <b>${m.iddaa_odds?.[key] == null ? "—" : Number(m.iddaa_odds[key]).toFixed(2)}</b></span>`).join("")}<small>${m.match_state?.price_status === "historical" ? "Maç öncesi kayıtlı oran" : m.match_state?.price_status === "removed_from_bulletin" ? "Bültenden kaldırılmış fiyat" : m.match_state?.price_status === "unverified_or_stale" ? "Oran güncelliği doğrulanamadı" : m.iddaa_updated_at ? "Oran: "+fmtTime(m.iddaa_updated_at) : "İddaa oranı bekleniyor"}</small></div>
     <div class="m-pick">${Simple.pickBlock(m)}
       ${(m.pick || m.alternative) ? `<div class="m-actions">${Slip.button(m, (m.pick || m.alternative).market)}<span class="m-more">Ayrıntılar ›</span></div>` : `<div class="m-actions"><span class="m-more">Ayrıntılar ›</span></div>`}
     </div>

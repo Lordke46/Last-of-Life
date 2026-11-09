@@ -72,16 +72,19 @@ def bulletin_event(event: dict) -> dict:
                   "groups": available_groups},
     }
 
+    from ..match_state import describe
+    result["match_state"]=describe(result)
     from ..quote_provenance import fresh
     from datetime import datetime,timezone
     from ..quote_provenance import timestamp
     at=timestamp(event.get('kickoff'))
     if (event.get('odds_current') is False or event.get('completed') or (at and at<=datetime.now(timezone.utc))
-            or (event.get('quote_provenance') is not None and not fresh(event))):
+            or (event.get('quote_provenance') is not None and not any(fresh(event,k) for k,v in markets.items() if v.get('p') is not None and k in odds))):
         result['decision']={'status':'no_bet','reason':'no_current_prematch_quotes'}
         return result
     from .predict import candidate
-    selection = candidate(markets, odds)
+    eligible={k:v for k,v in markets.items() if event.get('quote_provenance') is None or fresh(event,k)}
+    selection = candidate(eligible, odds)
     if selection:
         selection.update(candidate_type='market_candidate', probability_source='iddaa_market',
                          policy='market_candidate_v1', model_available=False)

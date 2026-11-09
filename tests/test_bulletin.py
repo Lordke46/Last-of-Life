@@ -175,7 +175,7 @@ class DateCoverageTests(unittest.TestCase):
         self.assertFalse(item['odds_current'])
         self.assertIsNone(item['pick'])
         detail=main.match('iddaa:old-small')
-        self.assertEqual(detail['summary']['headline'],'Arşiv kaydı')
+        self.assertEqual(detail['summary']['headline'],'Sonuç bekleniyor')
 
     def test_archived_source_alias_keeps_its_confirmed_match_result(self):
         from app import bulletin_archive,main
