@@ -20,3 +20,13 @@ class LiveScoreParsing(unittest.TestCase):
         event=self.event('1','0')
         event['status']={'displayClock':"50'",'type':{'state':'in'}}
         self.assertEqual(_parse_event(event,'all')['minute'],"50'")
+
+    def test_stale_league_feed_cannot_override_verified_final_from_all_leagues(self):
+        from app import live
+        from unittest.mock import patch
+        score={'id':'match','home_goals':2,'away_goals':1}
+        cache={'day':None,'updated_at':'now','sources':{'all':{'status':'success'},'eng.1':{'status':'error'}},
+               'leagues':{'all':[{**score,'state':'post','source_key':'all'}],
+                          'eng.1':[{**score,'state':'in','source_key':'eng.1'}]}}
+        with patch.object(live,'_cache',cache),patch.object(live,'_aliases',side_effect=lambda rows,day:rows):
+            self.assertEqual(live._snapshot()['matches'][0]['state'],'post')

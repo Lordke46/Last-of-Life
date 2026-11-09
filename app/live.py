@@ -102,7 +102,14 @@ def _aliases(rows, day):
 
 
 def _snapshot():
-    rows = list({m['id']:m for league,items in _cache['leagues'].items() for m in items}.values())
+    best={}
+    rank=lambda m:(m.get('state')=='post',_cache['sources'].get(m.get('source_key'),{}).get('status')=='success',
+                   _cache['sources'].get(m.get('source_key'),{}).get('last_success_at') or '')
+    for items in _cache['leagues'].values():
+        for m in items:
+            if m['id'] not in best or rank(m)>rank(best[m['id']]):
+                best[m['id']]=m
+    rows=list(best.values())
     rows=[{**m,'updated_at':_cache['sources'].get(m['source_key'],{}).get('last_success_at'),
            'stale':_cache['sources'].get(m['source_key'],{}).get('status')!='success'} if m.get('source_key') else m for m in rows]
     try:

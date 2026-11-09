@@ -24,7 +24,8 @@ def decorate(items):
             marks=','.join('?' for _ in batch)
             snapshots.update({row['match_id']:dict(row) for row in conn.execute(
                 f'SELECT match_id,captured_at,kickoff,payload FROM prediction_snapshots WHERE match_id IN ({marks})',batch)})
-        for item in items:
+        # Multiple dates may be captured together; acquire day locks in one order.
+        for item in sorted(items,key=lambda item:timestamp(item.get('kickoff')) or now):
             kickoff = timestamp(item.get('kickoff'))
             if not kickoff:
                 continue
