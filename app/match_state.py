@@ -7,10 +7,14 @@ def describe(item, now=None):
     now=now or datetime.now(timezone.utc)
     start=timestamp(item.get('kickoff'))
     status=str(item.get('status') or '').lower()
+    live=item.get('live_result') or {}
+    verified=all(isinstance(live.get(k),int) and not isinstance(live[k],bool) and live[k]>=0 for k in ('home_goals','away_goals'))
     if any(word in status for word in ('cancel','postpon','abandon','suspend')):
         phase='inactive'
-    elif item.get('completed'):
+    elif item.get('completed') or (verified and live.get('state')=='post'):
         phase='completed'
+    elif verified and live.get('state')=='in':
+        phase='live'
     elif start and start<=now:
         phase='started_result_pending'
     else:

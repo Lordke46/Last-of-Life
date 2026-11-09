@@ -56,19 +56,41 @@ function selectionImpossible(m, h, a) {
   if (m === "1X") return a > h; if (m === "12") return h === a; if (m === "X2") return h > a;
   return false;
 }
-function liveBadge(m) { return m ? `<span class="badge ${m.state === "in" ? "b-bad" : "b-info"}">${esc(m.home_goals)}–${esc(m.away_goals)} · ${esc(m.minute)}</span>` : ""; }
+function liveBadge(m) { return m ? `<span class="badge ${m.state === "in" ? "b-bad" : "b-info"}">${esc(m.home_goals)}–${esc(m.away_goals)} · ${esc(m.minute)}${m.stale && m.state === "in" ? " · Son kayıt" : ""}</span>` : ""; }
 function pickLive(p) {
   return state.live.get(String(p.id)) || [...state.live.values()].find((m) => m.home === p.home && m.away === p.away);
 }
 async function refreshLive() {
   try {
-    const data = await api("/api/live");
-    state.live = new Map((data.matches || []).map((m) => [String(m.id), { ...m, updated_at: data.sources?.[m.league]?.last_success_at || data.updated_at }]));
+    const day=state.bulletinDay;
+    const data = await api(`/api/live?day=${encodeURIComponent(day)}`,{cache:"no-store"});
+    if(day !== state.bulletinDay) return;
+    state.live = Simple.mergeLiveScores(state.live,(data.matches || []).map((m) => ({ ...m, updated_at: data.sources?.[m.source_key || m.league]?.last_success_at || data.updated_at })));
     if ($("#liveState")) $("#liveState").textContent = data.stale ? "Canlı skorların bir kısmı güncel değil; son alınan veriler gösteriliyor." : "";
     document.querySelectorAll(".match[data-id]").forEach((card) => {
-      const m = state.live.get(card.dataset.id), time = card.querySelector(".time");
+      const item=state.matchList?.find(item=>String(item.id) === card.dataset.id);
+      const m = state.live.get(card.dataset.id) || item?.live_result, time = card.querySelector(".time");
       if (time && m) time.innerHTML = liveBadge(m);
+      const block=card.querySelector('.m-pick > .v3-pick');
+      const started=item && Date.parse(item.kickoff)<=Date.now();
+      if(block && (m || (started && item.pick))) {
+        block.outerHTML=Simple.pickBlock({...item,live_result:m,awaiting_live:!m});
+        const history=card.querySelector('.prematch-slot');
+        if(history && item) history.innerHTML=Simple.historyBlock({...item,live_result:m});
+        card.querySelectorAll('.slip-add').forEach(button=>button.remove());
+      }
     });
+    if(state.openMatch && !$("#modal").classList.contains("hidden")) {
+      const score=state.live.get(String(state.openMatch.id)) || state.openMatch.live_result;
+      const block=$("#modalBody .hero > .v3-pick");
+      const started=Date.parse(state.openMatch.kickoff)<=Date.now();
+      if(block && (score || (started && state.openMatch.pick))) {
+        block.outerHTML=Simple.pickBlock({...state.openMatch,live_result:score,awaiting_live:!score});
+        const history=$("#modalBody .prematch-slot");
+        if(history) history.innerHTML=Simple.historyBlock({...state.openMatch,live_result:score});
+        $("#modalBody").querySelectorAll('.slip-add').forEach(button=>button.remove());
+      }
+    }
     document.querySelectorAll("[data-live-match]").forEach((row) => {
       if (row.hasAttribute("data-slip-row")) return; // kuponun kalıcı son skoru canlı listeden silinmesin
       const m = pickLive({ id: row.dataset.liveMatch, home: row.dataset.home, away: row.dataset.away });
@@ -142,8 +164,8 @@ function matchCard(m) {
       <div class="time">${live ? liveBadge(live) : fmtDateTime(m.kickoff)}</div>
     </div>
     <div class="bulletin-prices" aria-label="Maç sonucu oranları">${["1","X","2"].map((key)=>`<span>MS ${key === "X" ? "0" : key} <b>${m.iddaa_odds?.[key] == null ? "—" : Number(m.iddaa_odds[key]).toFixed(2)}</b></span>`).join("")}<small>${m.match_state?.price_status === "recent_observation" ? "Son kayıtlı oran · yeniden kontrol edilemedi" : m.match_state?.price_status === "historical" ? "Maç öncesi kayıtlı oran" : m.match_state?.price_status === "removed_from_bulletin" ? "Bültenden kaldırılmış fiyat" : m.match_state?.price_status === "unverified_or_stale" ? "Oran güncelliği doğrulanamadı" : m.iddaa_updated_at ? "Oran: "+fmtTime(m.iddaa_updated_at) : "İddaa oranı bekleniyor"}</small></div>
-    <div class="m-pick">${Simple.pickBlock(m)}
-      ${(m.pick || m.alternative) ? `<div class="m-actions">${Slip.button(m, (m.pick || m.alternative).market)}<span class="m-more">Ayrıntılar ›</span></div>` : `<div class="m-actions"><span class="m-more">Ayrıntılar ›</span></div>`}
+    <div class="m-pick">${Simple.pickBlock({...m,live_result:live || m.live_result})}<div class="prematch-slot">${Simple.historyBlock({...m,live_result:live || m.live_result})}</div>
+      ${(m.pick || m.alternative) && !live ? `<div class="m-actions">${Slip.button(m, (m.pick || m.alternative).market)}<span class="m-more">Ayrıntılar ›</span></div>` : `<div class="m-actions"><span class="m-more">Ayrıntılar ›</span></div>`}
     </div>
   </div>`;
 }
@@ -151,6 +173,7 @@ function matchCard(m) {
 function resetMatchFilters() { matchFilters.high=false; matchFilters.live=false; window.Extras?.resetMatchView?.(); }
 function setBulletinDay(day) {
   resetMatchFilters(); state.bulletinDay=day;
+  state.live=new Map(); refreshLive();
   const url=new URL(location.href); url.searchParams.set('day',day); history.replaceState(null,'',url);
   renderMatches();
 }
@@ -270,6 +293,7 @@ function renderSmallMatch(m) {
     </div>
     <div class="card hero">
       ${Simple.pickBlock(m)}
+      <div class="prematch-slot">${Simple.historyBlock(m)}</div>
       ${m.pick ? `<div class="hero-foot">${Slip.button(m, m.pick.market)}</div>` : ""}
     </div>
     ${window.RecommendationTools?.render(m, Slip.button, Simple.headline) || ""}
@@ -308,6 +332,8 @@ async function openMatch(id, competitionId = null) {
     return;
   }
   if (req !== state.matchReq) return;
+  state.openMatch=m;
+  m.live_result=state.live.get(String(m.id)) || m.live_result;
   if (m.small_league) { renderSmallMatch(m); return; }
   const f = m.factors, k = m.markets;
   const th = f.table.home, ta = f.table.away;
@@ -343,7 +369,7 @@ async function openMatch(id, competitionId = null) {
       <div class="vs muted">–</div>
       <div class="team">${img(m.away_logo)}<h3>${esc(m.away)}</h3></div>
     </div>
-    <div class="card hero">${hero}</div>
+    <div class="card hero">${hero}<div class="prematch-slot">${Simple.historyBlock(m)}</div></div>
     ${window.RecommendationTools?.render(m, Slip.button, Simple.headline) || ""}
     ${detail("Detaylar", `<h4>Diğer seçenekler</h4>${markets}<h4>Takımlar</h4>${compare}<div id="matchInsights"></div><h4>Haberler</h4>${news}`)}`;
   window.MatchPrompt?.mount(m, $("#modalBody"));
@@ -351,7 +377,7 @@ async function openMatch(id, competitionId = null) {
   renderOddsHistory(m);
   renderMatchInsights(m);
 }
-function closeModal() { state.matchReq += 1; $("#modal").classList.add("hidden"); }
+function closeModal() { state.matchReq += 1; state.openMatch=null; $("#modal").classList.add("hidden"); }
 window.closeModal = closeModal;
 
 const TAB_GROUPS = { coupons: ["coupons", "slip", "coupon-history", "ledger"] };

@@ -70,6 +70,7 @@ _NON_WORD = re.compile(r"[^a-z0-9]+")
 # Kaynaklar arasında düzenli görülen kısa/ad değişiklikleri. Değerler yalnızca
 # eşleştirme anahtarıdır; arayüzde takım adını değiştirmez.
 _ALIAS_GROUPS = {
+    "kristiansund": ["kristiansund bk"],
     "manchester city": ["man city"],
     "manchester united": ["man utd"],
     "nottingham forest": ["nottm forest"],
@@ -189,7 +190,7 @@ def _basic_name(value: str) -> str:
     value = (value or "").translate(_CHAR_MAP).casefold()
     value = "".join(c for c in unicodedata.normalize("NFKD", value) if not unicodedata.combining(c))
     value = _NON_WORD.sub(" ", value).strip()
-    tokens = [t for t in value.split() if t not in {"fc", "cf", "fk", "sk", "as", "ssc", "afc"}]
+    tokens = [t for t in value.split() if t not in {"fc", "cf", "fk", "sk", "as", "ssc", "afc", "sc"}]
     return " ".join(tokens)
 
 

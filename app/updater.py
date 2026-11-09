@@ -235,8 +235,10 @@ def _invalidate_models():
 
 
 def _capture_snapshots() -> int:
-    """İlk maç öncesi tahmini güncelleme işinde dondur. Bülten okuması yazmaz."""
+    """İlk model tahminini dondur; küçük liglerin maç öncesi seçimlerini de koru."""
     try:
+        from .recommendation_history import capture_bulletin
+        capture_bulletin()
         from .model import engine
         from .model.blend import blend_predictions
         from .model.snapshots import record_safely

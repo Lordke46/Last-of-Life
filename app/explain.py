@@ -156,8 +156,12 @@ def summarize(item: dict) -> dict:
         return summary(None,'Maç ertelendi, durduruldu veya iptal edildi; yeni bahis önerisi üretilmez.',label='Maç aktif değil')
     if phase=='started_result_pending':
         return summary(None,'Başlama saati geçti; canlı durum veya kesin sonuç henüz doğrulanmadı. Gösterilen oranlar maç öncesi kayıttır.',label='Sonuç bekleniyor')
+    if phase=='live':
+        score=item['live_result']
+        return summary(None,f"{score['home_goals']}–{score['away_goals']}",score.get('minute',''),label='Canlı')
     if phase=='completed':
-        h,a=item.get('home_goals'),item.get('away_goals')
+        score=item.get('live_result') or item
+        h,a=score.get('home_goals'),score.get('away_goals')
         return summary(None,f"{item['home']} {h}–{a} {item['away']}" if h is not None and a is not None else 'Maç tamamlandı; kesin skor bekleniyor.',label='Bitti')
     if price=='removed_from_bulletin':
         return summary(None,'Maç henüz başlamadı ancak son bültende bulunmuyor. Son kayıtlı oranlar güncel fiyat olarak kullanılamaz.',label='Bültende yok')

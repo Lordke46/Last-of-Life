@@ -55,7 +55,7 @@ def fixture_view(fixture, source=None):
         source={'odds':{r['market']:r['odd'] for r in rows},'updated_at':max((r['updated_at'] for r in rows),default=None)} if rows else {}
     now = datetime.now(timezone.utc)
     started = datetime.fromisoformat(fixture['kickoff'].replace('Z','+00:00')) <= now
-    base = {**fixture, 'id':str(fixture['id']), 'league_name':LEAGUES[fixture['league']]['name'],
+    base = {**fixture, 'id':str(fixture['id']), 'model_match_id':str(fixture['id']), 'league_name':LEAGUES[fixture['league']]['name'],
             'country':LEAGUES[fixture['league']]['country'], 'iddaa_odds':source.get('odds',{}),
             'iddaa_event_id':source.get('id'), 'iddaa_updated_at':source.get('updated_at'),
             'iddaa_min_matches':source.get('min_matches',{}), 'odds_current':False,
@@ -149,6 +149,8 @@ def build_bulletin(day: date, category: str, league: str | None = None):
             matches.append(out)
     for fixture in fixtures:
         if str(fixture['id']) not in covered:matches.append(fixture_view(fixture,histories.get(str(fixture["id"]),{})))
+    from .recommendation_history import decorate
+    decorate(matches)
     groups={}
     for item in matches:
         group=groups.setdefault(item['league'],{'league':item['league'],'name':item['league_name'],

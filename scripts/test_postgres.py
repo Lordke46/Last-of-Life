@@ -51,4 +51,12 @@ with psycopg.connect(url, row_factory=dict_row, prepare_threshold=None) as raw:
     espn.upsert(conn,match)
     espn.upsert(conn,{**match,'home_goals':None,'away_goals':None,'completed':0,'status':'Scheduled'})
     assert conn.execute("SELECT home_goals FROM matches WHERE id='ci-match'").fetchone()['home_goals']==1
-print('PostgreSQL migrations, idempotent repair and lease SQL passed')
+from unittest.mock import patch
+from app import db, recommendation_history
+with patch.object(db,'DATABASE_URL',url):
+    sample={'id':'iddaa:ci-displayed','iddaa_event_id':'ci-displayed','league':'small:ci',
+            'kickoff':(at+timedelta(hours=1)).isoformat(),'iddaa_updated_at':at.isoformat(),
+            'iddaa_odds':{'1':1.8},'pick':{'market':'1','p':.6,'odds':1.8,'odds_source':'iddaa'}}
+    recommendation_history.decorate([sample])
+    assert sample['prematch_recommendation']['pick']['odds']==1.8
+print('PostgreSQL migrations, idempotent repair, lease and recommendation-history SQL passed')

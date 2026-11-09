@@ -10,7 +10,8 @@ test('opening view includes all leagues in the daily bulletin',()=>{
 });
 test('all date navigation resets stale high/live filters and updates the selected date',()=>{
  const state={bulletinDay:'2099-01-02'},matchFilters={high:true,live:true};let renders=0, favoriteResets=0; const urls=[];
- const context=vm.createContext({state,matchFilters,Date,URL,location:{href:'http://localhost/'},history:{replaceState:(_,__,url)=>urls.push(String(url))},window:{Extras:{resetMatchView:()=>favoriteResets++}},renderMatches:()=>renders++});
+ let liveRefreshes=0;
+ const context=vm.createContext({state,matchFilters,Date,URL,location:{href:'http://localhost/'},history:{replaceState:(_,__,url)=>urls.push(String(url))},window:{Extras:{resetMatchView:()=>favoriteResets++}},renderMatches:()=>renders++,refreshLive:()=>liveRefreshes++});
  vm.runInContext(helpers,context);
  vm.runInContext('shiftBulletinDay(-1)',context);
  assert.equal(state.bulletinDay,'2099-01-01');
@@ -21,5 +22,6 @@ test('all date navigation resets stale high/live filters and updates the selecte
  assert.deepEqual(matchFilters,{high:false,live:false});
  assert.equal(renders,2);
  assert.equal(favoriteResets,2);
+ assert.equal(liveRefreshes,2);
  assert.match(urls[1],/day=2099-01-03/);
 });

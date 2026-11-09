@@ -50,6 +50,13 @@
 
   /** Bir maç/öneri nesnesinden gösterilecek tek öneri. */
   function info(m) {
+    const live = m.live_result;
+    if (live && ["in","post"].includes(live.state) && Number.isInteger(live.home_goals) && Number.isInteger(live.away_goals)) {
+      return {market:null,headline:live.state === "in" ? (live.stale ? "Son alınan skor" : "Canlı") : "Bitti",
+        title:`${live.home_goals}–${live.away_goals}`,level:0,level_label:"",odds:null,
+        reason:live.state === "in" ? `Canlı skor · ${live.minute || "Maç sürüyor"}` : "Kesin maç sonucu"};
+    }
+    if (m.awaiting_live) return {market:null,headline:"Sonuç bekleniyor",title:"Canlı skor kaynağından doğrulama bekleniyor.",level:0,reason:""};
     if (m.summary) {
       const market = m.summary.market;
       const marketPick = m.pick?.probability_source === "iddaa_market" || !!m.small_league;
@@ -104,5 +111,24 @@
     return `<div class="pick-why"><b>En yüksek olasılık:</b> ${esc(headline(pick.market))} · ${(pick.p * 100).toFixed(0)}% · iddaa ${pick.odds.toFixed(2)}<br><span class="muted">Tahmini olasılık; garanti değil. Ana öneri dengeli seçimdir.</span></div>`;
   }
 
-  return { headline, title, info, levelBadge, oddsBox, pickBlock, strongestPickBlock, confidenceLevel, sortMatches, filterMatches };
+  function historyBlock(m) {
+    const record=m.prematch_recommendation, pick=record?.pick;
+    if (!pick || !pick.market || !Number.isFinite(pick.odds)) return Date.parse(m.kickoff)<=Date.now()
+      ? '<div class="prematch-history"><small>Bu maç için kaydedilmiş maç öncesi öneri yok. Mevcut kayıtlı oranları Detaylar bölümünde görebilirsiniz.</small></div>' : "";
+    if (Date.parse(record.kickoff) > Date.now() && !["in","post"].includes(m.live_result?.state)) return "";
+    const captured=new Date(record.captured_at);
+    const time=Number.isNaN(captured.getTime()) ? "" : captured.toLocaleString("tr-TR",{timeZone:"Europe/Istanbul",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});
+    return `<div class="prematch-history"><div class="hero-label">Maç öncesi öneri</div><div class="history-choice"><b>${esc(headline(pick.market))} · ${esc(title(pick.market))}</b><span>Kayıtlı oran <b>${pick.odds.toFixed(2)}</b></span></div>${Number.isFinite(pick.p) ? `<p>${Math.round(pick.p*100)}% ${pick.probability_source === "iddaa_market" ? "piyasa olasılığı" : "tahmini olasılık"}</p>` : ""}<small>${esc(time)} tarihinde kaydedildi. Güncel bahis fiyatı değildir.</small></div>`;
+  }
+
+  function mergeLiveScores(previous, incoming) {
+    const merged=new Map(incoming.map(score=>[String(score.id),score]));
+    for (const [id,score] of previous) {
+      const next=merged.get(id);
+      if (score.state === "post" && (!next || (next.state !== "post" && next.kickoff === score.kickoff))) merged.set(id,score);
+    }
+    return merged;
+  }
+
+  return { headline, title, info, levelBadge, oddsBox, pickBlock, strongestPickBlock, historyBlock, mergeLiveScores, confidenceLevel, sortMatches, filterMatches };
 });
