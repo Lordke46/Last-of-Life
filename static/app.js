@@ -204,7 +204,7 @@ $("#bulletinDays").addEventListener("change",(event)=>{
 async function renderCoupons() {
   const el = $("#coupons"), req = ++state.couponReq;
   el.innerHTML = `<p class="muted">Kuponlar hesaplanıyor…</p>`;
-  const d = await api(`/api/coupons?day=${state.couponDate}`);
+  const d = await api(`/api/coupons?day=${state.couponDate}`,{cache:"no-store"});
   if (req !== state.couponReq) return; // daha yeni bir gün seçildi
   const data = d && typeof d === "object" ? d : {};
   const dateText = data.date && !Number.isNaN(new Date(`${data.date}T12:00:00Z`).getTime())

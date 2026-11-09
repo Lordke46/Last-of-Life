@@ -1,0 +1,67 @@
+/* Last of Life V3: quiet hierarchy, warm surfaces, clear actions. */
+:root {
+  --v3-forest: #1f3d2b;
+  --v3-sand: #e8dcc4;
+  --v3-purple: #8b5cf6;
+  --v3-radius: 18px;
+  --v3-soft-shadow: 0 12px 32px rgba(9, 28, 18, .16);
+}
+body { letter-spacing: .005em; }
+.topbar { border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+.brand-mark { background: var(--v3-purple); color: #fff; box-shadow: 0 4px 14px #8b5cf640; }
+.brand-name b { letter-spacing: -.035em; }
+main { max-width: 1180px; }
+.workspace-heading { padding: clamp(18px, 4vw, 38px) 0 14px; }
+.workspace-heading h1 { max-width: 19ch; font-size: clamp(28px, 5vw, 42px); line-height: 1.08; letter-spacing: -.045em; }
+.workspace-intro { max-width: 55ch; font-size: 15px; }
+#leagueChips, .bulletin-days, .coupon-toolbar { gap: 8px; }
+.match-list { gap: 14px; }
+.match.card, .coupon-card.card { overflow: hidden; border: 1px solid var(--line); border-radius: var(--v3-radius); box-shadow: var(--v3-soft-shadow); }
+.match.card { padding: clamp(14px, 3vw, 22px); }
+.match:hover { border-color: var(--accent2); }
+.m-head { gap: 12px; }
+.m-teams { gap: 7px; }
+.m-team b { font-size: clamp(16px, 2.7vw, 20px); }
+.bulletin-prices { margin: 12px 0; border-radius: 13px; }
+.m-pick, .hero { margin-top: 14px; }
+.v3-pick { margin-top: 12px; padding: 15px; border: 1px solid color-mix(in srgb, var(--accent2) 38%, var(--line)); border-radius: 15px; background: color-mix(in srgb, var(--panel2) 66%, transparent); }
+.hero-label { margin: 0 0 8px; color: var(--accent2); font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.pick-main { gap: 12px; }
+.pick-chip { min-width: 58px; min-height: 50px; display: grid; place-items: center; border-radius: 13px; font-size: 17px; font-weight: 800; }
+.pick-text { display: grid; gap: 4px; }
+.pick-text > b { font-size: 17px; }
+.v3-probability { color: var(--text); font-size: 14px; font-weight: 750; }
+.pick-odds { min-width: 88px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); text-align: center; }
+.pick-odds small { display: block; max-width: 12ch; color: var(--muted); font-size: 10px; line-height: 1.2; }
+.pick-odds b { display: block; margin-top: 3px; font-size: 21px; }
+.v3-caveat { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
+.pick-why { margin: 9px 0 0; color: var(--muted); font-size: 13px; }
+.m-actions { margin-top: 12px; }
+.m-actions .btn, .coupon-share-actions .btn { background: var(--v3-purple); color: #fff; border-color: transparent; font-weight: 750; }
+.coupon-group { margin: 24px 0; }
+.coupon-group > h3 { margin: 0 0 10px; font-size: clamp(19px, 3vw, 24px); letter-spacing: -.025em; }
+.coupon-card { margin: 12px 0; padding: clamp(14px, 3vw, 22px); }
+.coupon-card table { width: 100%; border-collapse: collapse; }
+.coupon-card th, .coupon-card td { padding: 11px 9px; border-bottom: 1px solid var(--line); text-align: left; }
+.coupon-card th { color: var(--muted); font-size: 12px; }
+.coupon-card td { font-size: 14px; }
+.coupon-total { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--panel2); }
+.coupon-share-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+.tabs { box-shadow: 0 -8px 24px rgba(9, 28, 18, .12); }
+.tabs > button.active { color: var(--accent2); }
+button, a, input, select { touch-action: manipulation; }
+:focus-visible { outline-offset: 3px; }
+@media (max-width: 650px) {
+  .update #lastUpdate { display: none; }
+  .workspace-heading { padding-top: 20px; }
+  .match.card { padding: 14px; }
+  .pick-main { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; }
+  .pick-odds { min-width: 76px; }
+  .coupon-card { overflow-x: auto; }
+  .coupon-card table { min-width: 570px; }
+  .coupon-card .row-between { align-items: flex-start; gap: 8px; }
+  .coupon-card .row-between > span { text-align: right; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
