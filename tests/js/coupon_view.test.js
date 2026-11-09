@@ -33,7 +33,7 @@ test("missing and partial coupon data renders a safe empty state", () => {
   assert.match(empty, /Olasılık/);
   assert.doesNotMatch(empty, /undefined|NaN/);
   assert.match(CouponView.couponCard(null, "Banko", "b-good"), /uygun maç bulunamadı/);
-  assert.match(CouponView.couponCard({ picks: [{}], total_odds: null, total_probability: null }, "Banko", "b-good"), /Toplam oran:<\/b> - · <b>Toplam tutma:<\/b> -/);
+  assert.match(CouponView.couponCard({ picks: [{}], total_odds: null, total_probability: null }, "Banko", "b-good"), /Toplam oran:<\/b> - · <b>Toplam tahmini olasılık:<\/b> -/);
 });
 
 test("coupon groups display multiple alternatives under their type", () => {
@@ -101,3 +101,19 @@ test('limited calibration is visible and the new policy does not blame it for an
  assert.match(reason,/1 aday var/);
  assert.doesNotMatch(reason,/en az 30/);
 });
+
+test('small league alternatives render and share as distinct market-only coupons', () => {
+ const one={picks:[{home:'A',away:'B',market:'A2.5',p:.6,odds:1.5,odds_source:'iddaa'}],total_odds:1.5,total_probability:.6,stake_note:'Piyasa verisi; model güveni yok'};
+ const two={...one,picks:[{...one.picks[0],home:'C'}]};
+ const data={small_leagues:one,small_league_alternatives:[one,two]};
+ assert.equal(CouponView.alternatives(data,'small_leagues').length,2);
+ const html=CouponView.couponGroup(data,'small_leagues','b-info','2026-11-09');
+ assert.match(html,/Piyasa verili küçük ligler/);
+ assert.match(html,/data-share-index="1"/);
+ assert.match(html,/model güveni yok/);
+});
+
+ test('empty modeled pool explains model scope without rejecting small leagues',()=>{
+ assert.match(CouponView.emptyReason({matches:0},'banko'),/bağımsız takım modeli/);
+ assert.match(CouponView.emptyReason({matches:0},'surprise'),/piyasa verili alternatifleri/);
+ });

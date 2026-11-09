@@ -1,5 +1,6 @@
 """FastAPI uygulaması. Çalıştırma: ./run.sh  (veya .venv/bin/uvicorn app.main:app)"""
 import json
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone, date
 from typing import Annotated
@@ -33,7 +34,7 @@ UPDATE_PER_MINUTE = 5
 @asynccontextmanager
 async def lifespan(_app):
     init_db()
-    if not is_postgres():  # yerel geliştirme: veri eskiyse açılışta arka planda güncelle
+    if not is_postgres() and os.environ.get("LOCAL_AUTO_UPDATE", "1") != "0":  # yerel geliştirme: veri eskiyse açılışta arka planda güncelle
         with session() as conn:
             last = get_meta(conn, "last_updated_at") or get_meta(conn, "last_update")
         if not last or datetime.now(timezone.utc) - parse_ts(last) > timedelta(hours=AUTO_UPDATE_HOURS):

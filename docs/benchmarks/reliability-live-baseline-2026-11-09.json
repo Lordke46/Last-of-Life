@@ -1,0 +1,92 @@
+[
+  {
+    "day": "2026-11-08",
+    "category": "main",
+    "seconds": 0.89,
+    "total": 46,
+    "archived": 43,
+    "picks": 0,
+    "groups": 9,
+    "error": null
+  },
+  {
+    "day": "2026-11-08",
+    "category": "other",
+    "seconds": 0.93,
+    "total": 625,
+    "archived": 625,
+    "picks": 0,
+    "groups": 180,
+    "error": null
+  },
+  {
+    "day": "2026-11-08",
+    "category": "all",
+    "seconds": 0.92,
+    "total": 671,
+    "archived": 668,
+    "picks": 0,
+    "groups": 189,
+    "error": null
+  },
+  {
+    "day": "2026-11-09",
+    "category": "main",
+    "seconds": 0.66,
+    "total": 0,
+    "archived": 0,
+    "picks": 0,
+    "groups": 0,
+    "error": null
+  },
+  {
+    "day": "2026-11-09",
+    "category": "other",
+    "seconds": 0.98,
+    "total": 64,
+    "archived": 24,
+    "picks": 37,
+    "groups": 41,
+    "error": null
+  },
+  {
+    "day": "2026-11-09",
+    "category": "all",
+    "seconds": 0.52,
+    "total": 64,
+    "archived": 24,
+    "picks": 37,
+    "groups": 41,
+    "error": null
+  },
+  {
+    "day": "2026-11-10",
+    "category": "main",
+    "seconds": 0.43,
+    "total": 0,
+    "archived": 0,
+    "picks": 0,
+    "groups": 0,
+    "error": null
+  },
+  {
+    "day": "2026-11-10",
+    "category": "other",
+    "seconds": 0.43,
+    "total": 8,
+    "archived": 1,
+    "picks": 6,
+    "groups": 6,
+    "error": null
+  },
+  {
+    "day": "2026-11-10",
+    "category": "all",
+    "seconds": 0.4,
+    "total": 8,
+    "archived": 1,
+    "picks": 6,
+    "groups": 6,
+    "error": null
+  }
+]

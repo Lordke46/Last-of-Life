@@ -128,7 +128,7 @@ function matchCard(m) {
       </div>
       <div class="time">${live ? liveBadge(live) : fmtDateTime(m.kickoff)}</div>
     </div>
-    <div class="bulletin-prices" aria-label="Maç sonucu oranları">${["1","X","2"].map((key)=>`<span>MS ${key === "X" ? "0" : key} <b>${m.iddaa_odds?.[key] == null ? "—" : Number(m.iddaa_odds[key]).toFixed(2)}</b></span>`).join("")}<small>${m.result_only ? "Geçmiş maç" : m.odds_current === false && m.is_archived ? "Arşiv oranları" : m.iddaa_updated_at ? "Oran: "+fmtTime(m.iddaa_updated_at) : "İddaa oranı bekleniyor"}</small></div>
+    <div class="bulletin-prices" aria-label="Maç sonucu oranları">${["1","X","2"].map((key)=>`<span>MS ${key === "X" ? "0" : key} <b>${m.iddaa_odds?.[key] == null ? "—" : Number(m.iddaa_odds[key]).toFixed(2)}</b></span>`).join("")}<small>${m.match_state?.price_status === "historical" ? "Maç öncesi kayıtlı oran" : m.match_state?.price_status === "removed_from_bulletin" ? "Bültenden kaldırılmış fiyat" : m.match_state?.price_status === "unverified_or_stale" ? "Oran güncelliği doğrulanamadı" : m.iddaa_updated_at ? "Oran: "+fmtTime(m.iddaa_updated_at) : "İddaa oranı bekleniyor"}</small></div>
     <div class="m-pick">${Simple.pickBlock(m)}
       ${(m.pick || m.alternative) ? `<div class="m-actions">${Slip.button(m, (m.pick || m.alternative).market)}<span class="m-more">Ayrıntılar ›</span></div>` : `<div class="m-actions"><span class="m-more">Ayrıntılar ›</span></div>`}
     </div>
@@ -201,11 +201,11 @@ async function renderCoupons() {
   el.innerHTML = `<p class="muted">${esc(dateText)} · ana ligler: ${matches} maç</p>` +
     CouponView.couponGroup(data, "banko", "b-good", data.date) +
     CouponView.couponGroup(data, "surprise", "b-warn", data.date) +
-    CouponView.couponCard(data.small_leagues, "Küçük Ligler Kuponu", "b-warn", { kind: "small_leagues", index: 0, date: data.date }) +
+    CouponView.couponGroup(data, "small_leagues", "b-info", data.date) +
     (["banko","surprise"].some((key)=>data[key]?.publication === "published") ? detail("Günün önceki yayımlanmış kuponları", ["banko","surprise"].map((key)=>data[key]?.publication === "published" ? CouponView.couponCard(data[key],key === "banko" ? "Yayımlanmış Banko" : "Yayımlanmış Sürpriz","b-info") : "").join("")) : "");
   el.querySelectorAll("[data-share-coupon]").forEach((button) => button.addEventListener("click", () => {
     const type = button.dataset.shareType, index = Number(button.dataset.shareIndex) || 0;
-    const coupon = type === "small_leagues" ? data.small_leagues : CouponView.alternatives(data, type)[index];
+    const coupon = CouponView.alternatives(data, type)[index];
     if (coupon?.picks?.length) window.CouponShare?.share({ title: button.closest(".coupon-card").querySelector("h3").textContent, date: data.date, picks: coupon.picks, totalOdds: coupon.total_odds }, button.parentElement.querySelector("[data-share-size]").value);
   }));
 }
@@ -251,6 +251,7 @@ function renderSmallMatch(m) {
       ${m.pick ? `<div class="hero-foot">${Slip.button(m, m.pick.market)}</div>` : ""}
     </div>
     ${window.RecommendationTools?.render(m, Slip.button, Simple.headline) || ""}
+    <div class="card"><h4>Takım modeli kapsamı</h4><p class="muted">${m.independent_team_analysis?.available ? "Lisanslı geçmişten bağımsız ön analiz mevcut; ileriye dönük doğrulama tamamlanmadığı için öneri güvenini değiştirmez." : ({team_history_stale:"Takımların geçmiş sonuçları güncel değil; bağımsız model güveni hesaplanmıyor.",team_identity_unverified:"Takım kimlikleri geçmiş veriyle güvenle eşleştirilemedi.",insufficient_team_history:"Bağımsız model için yeterli takım geçmişi yok."}[m.independent_team_analysis?.reason] || "Bu lig için doğrulanmış, güncel ve lisanslı takım geçmişi bağlı değil. Gösterilen yüzdeler oranlardan hesaplanan piyasa olasılığıdır.")}</p>${m.independent_team_analysis?.available ? `<p>Geçmiş maç: ${Number(m.independent_team_analysis.history_matches) || 0} · Sonuç zamanı hassasiyeti: gün</p>` : ""}</div>
     ${detail("Detaylar", odds.length ? `<table><tr><th class="l">Seçenek</th><th>iddaa oranı</th><th></th></tr>${marketRows}</table>` : `<p class="muted">Bu maç için oran verisi yok.</p>`)}`;
   window.MatchPrompt?.mount(m, $("#modalBody"));
 }

@@ -61,7 +61,7 @@ ELİMDEKİ MAÇ VERİLERİ (JSON; yüzdeler ayrıca belirtilmedikçe olasılıkl
         data_integrity:match.data_integrity ?? null, coverage_note:'Bu sayılar veri miktarı/tutarlılığıdır; modelin isabet oranı veya %100 güvenilirlik iddiası değildir.',
         model_expected_goals:{home:num(match.lambda_home),away:num(match.lambda_away),source:'Poisson/Elo model estimate, not measured xG'},
         poisson:f.poisson ?? null, elo:f.elo ?? null, form:f.form ?? null, rest:f.rest ?? null,
-        table:f.table ?? null, head_to_head:f.h2h ?? null, news:{home:news(f.news?.home),away:news(f.news?.away)}},
+        independent_team_analysis:match.independent_team_analysis ?? null, table:f.table ?? null, head_to_head:f.h2h ?? null, news:{home:news(f.news?.home),away:news(f.news?.away)}},
       markets: keys.slice(0, 120).map(key => {
         const item = match.markets?.[key] || match.extra_markets?.[key] || {};
         const row = {market:key, probability:num(item.p), model_probability:num(item.model_p), market_probability:num(item.market_p),

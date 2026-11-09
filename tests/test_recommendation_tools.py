@@ -81,3 +81,14 @@ class RecommendationToolsTests(unittest.TestCase):
                 result = main.match('demo')
         self.assertEqual(result['recommendation_tools']['by_probability'][0]['market'], '1')
         self.assertEqual(result['markets'], prediction()['markets'])
+
+    def test_calibration_is_shared_with_selected_pick_and_small_market_has_no_model_threshold(self):
+        p=prediction()
+        p['calibration_by_market']={'1':{'p':.59,'applied':True}}
+        out=analyse(p,NOW)
+        option=next(r for r in out['by_probability'] if r['market']=='1')
+        self.assertEqual(option['p'],.59)
+        self.assertEqual(option['raw_p'],.72)
+        p['small_league']=True
+        out=analyse(p,NOW)
+        self.assertTrue(all(r['meets_probability_threshold'] is None for r in out['by_probability']))

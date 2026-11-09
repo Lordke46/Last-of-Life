@@ -29,7 +29,9 @@ def _list_item(item: dict) -> dict:
         market = choice.get("market") if isinstance(choice, dict) else None
         if market:
             needed.add(market)
+    from .match_state import describe
     slim = {key: value for key, value in item.items() if key not in _LIST_HEAVY}
+    slim["match_state"] = describe(item)
     markets = item.get("markets") if isinstance(item.get("markets"), dict) else {}
     extra = item.get("extra_markets") if isinstance(item.get("extra_markets"), dict) else {}
     kept = {market: markets[market] for market in needed if market in markets}
@@ -132,7 +134,7 @@ def build_bulletin(day: date, category: str, league: str | None = None):
                     country=LEAGUES.get(event['league'],{}).get('country',event.get('country','')),
                     iddaa_event_id=event_id,iddaa_updated_at=event.get('updated_at'),
                     iddaa_min_matches=event.get('min_matches',{}),odds_current=current,
-                    is_archived=not current,iddaa_odds=event.get('odds',{}),
+                    is_archived=event_id not in active,bulletin_present=event_id in active,iddaa_odds=event.get('odds',{}),
                     quote_provenance=quote_provenance.for_event(provenance,event_id) if current else None)
         if fixture and current:
             prediction=engine.get_model(event['league']).predict(fixture['home'],fixture['away'],

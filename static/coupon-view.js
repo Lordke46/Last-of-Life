@@ -49,7 +49,7 @@
       ? `<table><thead><tr><th class="l">Maç</th><th>Lig</th><th>Saat</th><th>Seçim</th><th>Oran</th><th>Olasılık</th></tr></thead><tbody>${rows}</tbody></table>`
       : `<p class="muted">Bu kupon için uygun maç bulunamadı.</p>`;
     const totals = picks.length
-      ? `<div class="coupon-total"><b>Toplam oran:</b> ${esc(displayNumber(coupon.total_odds))} · <b>Toplam tutma:</b> ${probability(coupon.total_probability)}<br><span class="muted">${esc(coupon.stake_note || "")}</span></div>`
+      ? `<div class="coupon-total"><b>Toplam oran:</b> ${esc(displayNumber(coupon.total_odds))} · <b>Toplam tahmini olasılık:</b> ${probability(coupon.total_probability)}<br><span class="muted">${esc(coupon.stake_note || "")}</span></div>`
       : "";
     const shareActions = picks.length && share
       ? `<div class="coupon-share-actions"><button type="button" class="btn" data-share-coupon data-share-type="${esc(share.kind)}" data-share-index="${share.index}">Paylaş</button><select aria-label="Görsel boyutu" data-share-size><option value="square">Kare 1080×1080</option><option value="story">Story 1080×1920</option></select></div>`
@@ -65,7 +65,7 @@
   function alternatives(data, type) {
     if (!data || typeof data !== "object") return [];
     if (Array.isArray(data[`current_${type}_alternatives`]) && (!data.date || data.date >= new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Istanbul"}))) return data[`current_${type}_alternatives`];
-    const key = `${type}_alternatives`;
+    const key = type === "small_leagues" ? "small_league_alternatives" : `${type}_alternatives`;
     const listed = Array.isArray(data[key])
       ? data[key].filter((coupon) => coupon && typeof coupon === "object" && Array.isArray(coupon.picks) && coupon.picks.length)
       : [];
@@ -75,9 +75,12 @@
   }
 
   function emptyReason(data, type) {
-    const label = type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
+    const label = type === "small_leagues" ? "Piyasa verili küçük ligler" : type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
     const diag = data && typeof data === "object" ? data[`${type}_diagnostics`] || {} : {};
     const lines = [];
+    if (type !== "small_leagues" && data && Number(data.matches) === 0) {
+      return "Bu gün bağımsız takım modeliyle değerlendirilmiş, henüz başlamamış ana lig maçı yok. Küçük liglerin piyasa verili alternatifleri aşağıda gösterilir.";
+    }
     if (diag.stale_odds) {
       const age = Number(diag.odds_age_minutes);
       const when = Number.isFinite(age) ? `Oranlar ${Math.trunc(age)} dk önce alındı. ` : "";
@@ -97,7 +100,7 @@
   }
 
   function couponGroup(data, type, badgeClass, date) {
-    const label = type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
+    const label = type === "small_leagues" ? "Piyasa verili küçük ligler" : type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
     const coupons = alternatives(data, type);
     const content = coupons.length
       ? coupons.map((coupon, index) => couponCard(coupon, `${label} Kuponu ${index + 1}`, badgeClass, { kind: type, index, date })).join("")

@@ -14,7 +14,7 @@
       const move = item.movement;
       const signals = [item.model_market_disagree ? 'Model ve piyasa ayrışıyor' : '',
         !item.actionable ? 'İnceleme amaçlı; öneri değil' : '',
-        !item.meets_probability_threshold ? 'Öneri eşiği altında' : '',
+        item.meets_probability_threshold === false ? 'Öneri eşiği altında' : '',
         move ? `İlk kayıt ${number(move.first_observed)} → ${number(move.current)} (${move.change_pct > 0 ? '+' : ''}${move.change_pct}%)` : ''].filter(Boolean);
       return `<tr><td class="l" data-field="choice"><b>${esc(headline(item.market))}</b>${signals.length ? `<small class="comparison-signals">${signals.map(esc).join(' · ')}</small>` : ''}</td>
         <td data-field="probability" data-label="Şans">${percentage(item.p)}<small class="comparison-signals">Model ${percentage(item.model_p)} / Piyasa ${percentage(item.market_p)}</small></td>

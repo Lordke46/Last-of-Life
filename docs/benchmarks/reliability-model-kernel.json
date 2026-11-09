@@ -1,0 +1,27 @@
+[
+  {
+    "file": "app/model/engine.py",
+    "same_as_baseline": true,
+    "sha256": "82467511cb1b6d41a493481592fd9b12f5d323bb3f709e12281061d5055c8665"
+  },
+  {
+    "file": "app/model/predict.py",
+    "same_as_baseline": true,
+    "sha256": "e24fecf868c531c7931be9d66425445ea3a53ffe32bc8a3ee81a3197b74fa193"
+  },
+  {
+    "file": "app/model/ratings.py",
+    "same_as_baseline": true,
+    "sha256": "71afb0560d3d0885f821c424aa2b5a5919e5d3a0f7979225e25d3c1f198f08bf"
+  },
+  {
+    "file": "app/model/fitted.py",
+    "same_as_baseline": true,
+    "sha256": "b94eaf39b08f15b4b7de5a8b82e02aa44a7b3e7bfc34c3b53bdc4feec6f6f0af"
+  },
+  {
+    "file": "app/model/blend.py",
+    "same_as_baseline": true,
+    "sha256": "7c5e7fc91e1d60a401e8ac7a3dc14a777af12ff77d99abacf47e5320a57b3dd8"
+  }
+]
