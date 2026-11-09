@@ -136,6 +136,22 @@ class SyncOddsTests(unittest.TestCase):
                 iddaa.sync_odds(conn)
             self.assertEqual(iddaa.odds_for_matches(conn, ["espn-1"]), {})
 
+    def test_catalog_timeout_preserves_known_small_league_labels(self):
+        from unittest.mock import patch
+        from app import db
+        from app.scrapers import iddaa
+        raw = self.raw(3, 'Home', 'Away', 1.8)
+        raw['ci'] = 999999
+        with db.session() as conn:
+            conn.execute("INSERT INTO iddaa_events(id,league,competition_id,kickoff,home,away,league_name,country,is_small,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         ('old','small:bg:second',999999,'2026-11-10T12:00Z','Home','Away','Second League','BG',1,'2026-11-09T10:00Z'))
+            with patch.object(iddaa, 'fetch_json', return_value={'data': {'events': [raw]}}), \
+                 patch.object(iddaa, 'fetch_competitions', side_effect=TimeoutError), \
+                 patch.object(iddaa, 'enrich_events', return_value={}):
+                iddaa.sync_odds(conn)
+            event = conn.execute('SELECT league_name,country FROM iddaa_events').fetchone()
+            self.assertEqual((event['league_name'], event['country']), ('Second League','BG'))
+
 
 def test_turkish_and_german_aliases_match_espn_names():
     from app.scrapers import iddaa

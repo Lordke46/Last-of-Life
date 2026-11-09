@@ -38,18 +38,18 @@
     coupon = coupon && typeof coupon === "object" ? coupon : {};
     const picks = Array.isArray(coupon.picks) ? coupon.picks.filter((pick) => pick && typeof pick === "object") : [];
     const rows = picks.map((pick) => `<tr>
-      <td class="l"><b>${esc(pick.home || "Takım bilgisi yok")}</b> – ${esc(pick.away || "Takım bilgisi yok")}</td>
-      <td>${esc(pick.league_name || pick.league || "-")}</td>
-      <td>${esc(pickTime(pick.kickoff))}</td>
-      <td><span class="badge b-info">${esc({"1X":"ÇŞ 1–0","X2":"ÇŞ 0–2","12":"ÇŞ 1–2"}[pick.market] || pick.market || "-")}</span></td>
-      <td>${odds(pick)}</td>
-      <td>${probability(pick.p)}</td>
+      <td class="l" data-label="Maç"><b>${esc(pick.home || "Takım bilgisi yok")}</b> – ${esc(pick.away || "Takım bilgisi yok")}</td>
+      <td data-label="Lig">${esc(pick.league_name || pick.league || "-")}</td>
+      <td data-label="Saat">${esc(pickTime(pick.kickoff))}</td>
+      <td data-label="Seçim"><span class="badge b-info">${esc({"1X":"ÇŞ 1–0","X2":"ÇŞ 0–2","12":"ÇŞ 1–2"}[pick.market] || pick.market || "-")}</span></td>
+      <td data-label="Oran">${odds(pick)}</td>
+      <td data-label="Olasılık">${probability(pick.p)}${pick.probability_source === "iddaa_market" ? "<small> · Piyasa</small>" : ""}</td>
     </tr>`).join("");
     const content = picks.length
       ? `<table><thead><tr><th class="l">Maç</th><th>Lig</th><th>Saat</th><th>Seçim</th><th>Oran</th><th>Olasılık</th></tr></thead><tbody>${rows}</tbody></table>`
       : `<p class="muted">Bu kupon için uygun maç bulunamadı.</p>`;
     const totals = picks.length
-      ? `<div class="coupon-total"><b>Toplam oran:</b> ${esc(displayNumber(coupon.total_odds))} · <b>Toplam tahmini olasılık:</b> ${probability(coupon.total_probability)}<br><span class="muted">${esc(coupon.stake_note || "")}</span></div>`
+      ? `<div class="coupon-total"><b>Toplam oran:</b> ${esc(displayNumber(coupon.total_odds))} · <b>Toplam tahmini olasılık:</b> ${probability(coupon.total_probability)}${coupon.stake_note ? `<details class="coupon-method"><summary>Seçim yöntemi</summary><p class="muted">${esc(coupon.stake_note)}</p></details>` : ""}</div>`
       : "";
     const shareActions = picks.length && share
       ? `<div class="coupon-share-actions"><button type="button" class="btn" data-share-coupon data-share-type="${esc(share.kind)}" data-share-index="${share.index}">Paylaş</button><select aria-label="Görsel boyutu" data-share-size><option value="square">Kare 1080×1080</option><option value="story">Story 1080×1920</option></select></div>`
@@ -61,7 +61,7 @@
       : coupon.publication === "live" ? `<p class="muted">Güncel alternatif · günün kayıtlı kuponundan farklı olabilir.</p>` : "";
     const tier = coupon.selection_tier || coupon.metadata?.selection_tier || share?.selectionTier;
     const targetMet = coupon.target_met ?? coupon.metadata?.target_met ?? share?.targetMet;
-    const tierLabel = tier === "banko" || tier === "balanced" ? "Banko tercihi · dengeli" : tier === "surprise" ? "Sürpriz tercihi" : "Günün en uygun mevcut alternatifi";
+    const tierLabel = tier === "preferred" ? (coupon.type === "surprise" ? "Sürpriz hedefi sağlandı" : "Banko hedefi sağlandı") : tier === "banko" || tier === "balanced" ? "Banko tercihi · dengeli" : tier === "surprise" ? "Sürpriz tercihi" : "Günün en uygun mevcut alternatifi";
     const targetNote = targetMet === true
       ? "Tercih koşullarını karşıladı; sonuç garantisi değildir."
       : targetMet === false

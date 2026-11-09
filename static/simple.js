@@ -91,7 +91,7 @@
       <span class="pick-chip${s.market ? "" : " none"}">${esc(s.headline)}</span>
       <div class="pick-text"><b>${esc(s.title)}</b>${s.market ? `<span class="v3-probability">${s.p == null ? "Olasılık yok" : `${Math.round(s.p * 100)}% tahmini olasılık`}</span>${pSource ? `<small class="v3-p-source">${pSource}</small>` : ""}${levelBadge(s.level, s.level_label)}` : ""}</div>
       ${s.market ? oddsBox(s.odds) : ""}
-    </div>${s.reason ? `<p class="pick-why">${esc(s.reason)}</p>` : ""}${targetNote}<p class="v3-caveat">Tahmini olasılık; garanti değildir.</p></div>`;
+    </div>${s.reason ? `<p class="pick-why">${esc(s.reason)}</p>` : ""}${targetNote}${s.market ? '<p class="v3-caveat">Tahmini olasılık; garanti değildir.</p>' : ""}</div>`;
   }
 
   function strongestPickBlock(m) {

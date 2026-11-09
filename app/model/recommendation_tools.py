@@ -37,6 +37,8 @@ def analyse(prediction, now=None):
     small = bool(prediction.get('small_league'))
     n = prediction.get('data_n')
     warnings = []
+    if fresh and (prediction.get('quote_provenance') or {}).get('last_fetch_status')=='failed':
+        warnings.append('Son fiyat kontrolü başarısız; iki saatlik geçerlilik penceresindeki son doğrulanmış gözlem kullanılıyor.')
     if not fresh:
         warnings.append('Oran zamanı güncel veya doğrulanmış değil; seçenekler bilgi amaçlıdır.')
     if not kickoff or kickoff <= now:
@@ -78,7 +80,7 @@ def analyse(prediction, now=None):
                         'movement': movement,
                         'in_preferred_band': PICK_MIN_ODDS <= quote <= PICK_MAX_ODDS,
                         'raw_p':raw_p, 'calibration_applied':bool(calibrated.get('applied')),
-                        'meets_probability_threshold': None if small else p >= PICK_MIN_P,
+                        'meets_probability_threshold': None if small or item.get('market_only') else p >= PICK_MIN_P,
                         'actionable': actionable and not reasons(prediction,market,now)})
     in_band = [c for c in options if c['in_preferred_band']]
     # Fiyat avantajı ayrı sıralamadır; varsayılan isabet listesini veya Banko'yu kapatmaz.

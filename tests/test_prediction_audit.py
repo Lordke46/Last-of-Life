@@ -103,7 +103,7 @@ class DatabaseAudit(unittest.TestCase):
             pred={**quote_prediction(),'quote_provenance':meta}
             self.assertTrue(Q.fresh(pred,'A3.5',later))
             Q.failed(c,'offline',later.isoformat())
-            self.assertFalse(Q.fresh({**pred,'quote_provenance':Q.for_event(Q.load(c),'3279014')},'A3.5',later))
+            self.assertTrue(Q.fresh({**pred,'quote_provenance':Q.for_event(Q.load(c),'3279014')},'A3.5',later))
             self.assertEqual(Q.load(c)['last_successful_fetch_at'],later.isoformat())
 
     def test_cache_old_timestamp_mismatched_or_missing_quote_is_not_fresh(self):

@@ -174,4 +174,7 @@ def bulletin(day: date | None = None, category: str = 'main', league: str | None
     if category not in ('all','main','other'):raise HTTPException(400,'Bilinmeyen bülten türü')
     if league and (category=='other' or league not in LEAGUES):raise HTTPException(400,'Bilinmeyen lig')
     target=day or datetime.now(TZ).date()
+    if target>=datetime.now(TZ).date():
+        from .bulletin_refresh import refresh_if_stale
+        refresh_if_stale()
     return ops.cached(('bulletin',target,category,league),lambda:build_bulletin(target,category,league))

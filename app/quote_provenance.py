@@ -80,7 +80,7 @@ def fresh(prediction, market=None, now=None):
         at = timestamp(prediction.get('iddaa_updated_at'))
         return bool(at and now-MAX_AGE <= at <= now+timedelta(minutes=5)
                     and prediction.get('odds_current') is not False)
-    if meta.get('last_fetch_status') != 'success' or prediction.get('odds_current') is False:
+    if meta.get('last_fetch_status') not in ('success','failed') or prediction.get('odds_current') is False:
         return False
     quotes = meta.get('quotes', {})
     keys = [market] if market is not None else list(prediction.get('iddaa_odds', {}))

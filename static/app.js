@@ -1,10 +1,21 @@
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const pct = (p) => (p * 100).toFixed(0) + "%";
-const api = async (url, opts) => {
-  const r = await fetch(url, opts);
-  if (!r.ok) throw new Error((await r.text()) || r.status);
-  return r.json();
+const api = async (url, opts = {}) => {
+  const controller = opts.signal ? null : new AbortController();
+  const timeout = controller ? setTimeout(() => controller.abort(), 20000) : null;
+  try {
+    const r = await fetch(url, {...opts, signal:opts.signal || controller?.signal});
+    if (!r.ok) {
+      let detail;
+      try { const body=await r.json(); detail=typeof body.detail === "string" ? body.detail : null; } catch (_) {}
+      throw new Error(detail || (r.status >= 500 ? "Sunucuya şu anda ulaşılamıyor. Tekrar deneyin." : "İstek tamamlanamadı. Sayfayı yenileyip tekrar deneyin."));
+    }
+    return await r.json();
+  } catch (error) {
+    if(error.name === "AbortError") throw new Error("Veriler zamanında alınamadı. Tekrar deneyin.");
+    throw error;
+  } finally { if(timeout) clearTimeout(timeout); }
 };
 
 // Eski uygulama kabuğu yeni betikle açılırsa eksik gün seçici alanını oluştur.
@@ -15,7 +26,7 @@ if (!$("#bulletinDays")) {
 const bulletinToday = () => new Date().toLocaleDateString("sv-SE", {timeZone:"Europe/Istanbul"});
 const matchFilters = {high:false, live:false};
 const requestedDay=new URLSearchParams(location.search).get('day');
-const initialDay=requestedDay && /^\d{4}-\d{2}-\d{2}$/.test(requestedDay) && Number.isFinite(Date.parse(requestedDay)) ? requestedDay : bulletinToday();
+const initialDay=requestedDay && /^\d{4}-\d{2}-\d{2}$/.test(requestedDay) && Number.isFinite(Date.parse(requestedDay)) && new Date(requestedDay).toISOString().slice(0,10) === requestedDay ? requestedDay : bulletinToday();
 const state = {league:null, bulletinCategory:"all", bulletinDay:initialDay, bulletinReq:0,
   tab:"matches", leagues:[], couponDate:bulletinToday(), couponReq:0, matchReq:0, live:new Map()};
 
@@ -130,7 +141,7 @@ function matchCard(m) {
       </div>
       <div class="time">${live ? liveBadge(live) : fmtDateTime(m.kickoff)}</div>
     </div>
-    <div class="bulletin-prices" aria-label="Maç sonucu oranları">${["1","X","2"].map((key)=>`<span>MS ${key === "X" ? "0" : key} <b>${m.iddaa_odds?.[key] == null ? "—" : Number(m.iddaa_odds[key]).toFixed(2)}</b></span>`).join("")}<small>${m.match_state?.price_status === "historical" ? "Maç öncesi kayıtlı oran" : m.match_state?.price_status === "removed_from_bulletin" ? "Bültenden kaldırılmış fiyat" : m.match_state?.price_status === "unverified_or_stale" ? "Oran güncelliği doğrulanamadı" : m.iddaa_updated_at ? "Oran: "+fmtTime(m.iddaa_updated_at) : "İddaa oranı bekleniyor"}</small></div>
+    <div class="bulletin-prices" aria-label="Maç sonucu oranları">${["1","X","2"].map((key)=>`<span>MS ${key === "X" ? "0" : key} <b>${m.iddaa_odds?.[key] == null ? "—" : Number(m.iddaa_odds[key]).toFixed(2)}</b></span>`).join("")}<small>${m.match_state?.price_status === "recent_observation" ? "Son kayıtlı oran · yeniden kontrol edilemedi" : m.match_state?.price_status === "historical" ? "Maç öncesi kayıtlı oran" : m.match_state?.price_status === "removed_from_bulletin" ? "Bültenden kaldırılmış fiyat" : m.match_state?.price_status === "unverified_or_stale" ? "Oran güncelliği doğrulanamadı" : m.iddaa_updated_at ? "Oran: "+fmtTime(m.iddaa_updated_at) : "İddaa oranı bekleniyor"}</small></div>
     <div class="m-pick">${Simple.pickBlock(m)}
       ${(m.pick || m.alternative) ? `<div class="m-actions">${Slip.button(m, (m.pick || m.alternative).market)}<span class="m-more">Ayrıntılar ›</span></div>` : `<div class="m-actions"><span class="m-more">Ayrıntılar ›</span></div>`}
     </div>
@@ -210,10 +221,9 @@ async function renderCoupons() {
   const dateText = data.date && !Number.isNaN(new Date(`${data.date}T12:00:00Z`).getTime())
     ? fmtDay(`${data.date}T12:00:00Z`) : "Gün bilgisi yok";
   const matches = Number.isFinite(Number(data.matches)) ? Number(data.matches) : 0;
-  el.innerHTML = `<p class="muted">${esc(dateText)} · ana ligler: ${matches} maç</p>` +
+  el.innerHTML = `<p class="muted">${esc(dateText)} · tüm liglerden ${matches} maç</p>` +
     CouponView.couponGroup(data, "banko", "b-good", data.date) +
     CouponView.couponGroup(data, "surprise", "b-warn", data.date) +
-    CouponView.couponGroup(data, "small_leagues", "b-info", data.date) +
     (["banko","surprise"].some((key)=>data[key]?.publication === "published") ? detail("Günün önceki yayımlanmış kuponları", ["banko","surprise"].map((key)=>data[key]?.publication === "published" ? CouponView.couponCard(data[key],key === "banko" ? "Yayımlanmış Banko" : "Yayımlanmış Sürpriz","b-info") : "").join("")) : "");
   el.querySelectorAll("[data-share-coupon]").forEach((button) => button.addEventListener("click", () => {
     const type = button.dataset.shareType, index = Number(button.dataset.shareIndex) || 0;

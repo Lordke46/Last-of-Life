@@ -102,7 +102,8 @@ class LeagueModel:
     # --- tek maç tahmini ---------------------------------------------------
     def predict(self, home: str, away: str, kickoff: datetime, strengths=None, elo=None,
                 history=None, news=None, detail=True) -> dict:
-        historical = history is not None or kickoff <= datetime.now(timezone.utc)
+        explicit_history = history is not None
+        historical = explicit_history or kickoff <= datetime.now(timezone.utc)
         if historical:
             history = [m for m in (self.done if history is None else history) if played_before(m,kickoff)]
             strengths = strengths or Strengths(history,kickoff)
@@ -127,7 +128,7 @@ class LeagueModel:
         log_a = (1 - w) * math.log(la_p) + w * math.log(la_e)
 
         # Güçler lig içinden; form/dinlenme diğer resmi kulvarları da kapsar.
-        context_hist = self.all_history if history is None else hist
+        context_hist = hist if explicit_history else [m for m in self.all_history if played_before(m,kickoff)]
         form_h = team_form(context_hist, home, kickoff, team_id=self.team_ids.get(home))
         form_a = team_form(context_hist, away, kickoff, team_id=self.team_ids.get(away))
         league_h = team_form(hist,home,kickoff,team_id=self.team_ids.get(home))

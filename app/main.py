@@ -162,6 +162,13 @@ def _small_prediction(event: dict) -> dict:
 
 @app.get("/api/match/{match_id}")
 def match(match_id: str, competition_id: Annotated[int | None, Query(ge=1)] = None):
+    event_id = match_id.removeprefix("iddaa:")
+    with session() as conn:
+        known=conn.execute('SELECT kickoff FROM matches WHERE id=?',(match_id,)).fetchone()
+        if not known:known=conn.execute('SELECT kickoff FROM iddaa_events WHERE id=?',(event_id,)).fetchone()
+    if known and parse_ts(known['kickoff'])>datetime.now(timezone.utc):
+        from .bulletin_refresh import refresh_if_stale
+        refresh_if_stale()
     with session() as conn:
         event_id = match_id.removeprefix("iddaa:")
         small = conn.execute("SELECT * FROM iddaa_events WHERE id=? AND (is_small=1 OR ?=1)",
@@ -320,6 +327,9 @@ def coupons(day: str | None = Query(None, description="YYYY-MM-DD (Türkiye saat
         target = date.fromisoformat(day) if day else datetime.now(TZ).date()
     except ValueError as exc:
         raise HTTPException(400, "Gün YYYY-AA-GG biçiminde olmalı") from exc
+    if target>=datetime.now(TZ).date():
+        from .bulletin_refresh import refresh_if_stale
+        refresh_if_stale()
     return ops.cached(("coupons", target), lambda: _coupons(target))
 
 

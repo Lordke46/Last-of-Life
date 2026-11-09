@@ -107,7 +107,8 @@ def _choices(prediction: dict, iddaa_odds: dict) -> list[dict]:
                     "calibration_n": calib.get("n", 0), "calibration_applied": calibrated,
                     "odds": odds, "odds_source": source,
                     "iddaa_odds": theirs if source == "iddaa" else None, "claude_odds": claude,
-                    "market_p": item.get("market_p"),
+                    "market_p": item.get("market_p"), "market_only":item.get("market_only",prediction.get("small_league",False)),
+                    "probability_source":item.get("probability_source"),
                     "fair": item.get("fair"), "min_matches": prediction.get("iddaa_min_matches", {}).get(market, 1)})
     return out
 
@@ -121,10 +122,10 @@ def _match_view(prediction: dict, choice: dict) -> dict:
             "market_probability": prediction.get("markets", {}).get(choice["market"], {}).get("market_p"),
             "data_n": prediction.get("data_n", 0),
             "news_effect": (prediction.get("factors") or {}).get("news", {}).get("log_adj"),
-            "probability_source": "iddaa_market" if prediction.get("small_league") else
+            "probability_source": choice.get("probability_source") or ("iddaa_market" if prediction.get("small_league") else
                                   "calibrated" if choice.get("calibration_applied") else
-                                  "blend" if prediction.get("blend", {}).get("applied") else "model"}
-    if prediction.get("small_league"):
+                                  "blend" if prediction.get("blend", {}).get("applied") else "model")}
+    if prediction.get("small_league") or choice.get("market_only"):
         view["small_league"] = True
     return view
 
@@ -142,7 +143,7 @@ def small_league_recommendation(prediction: dict, choices: list[dict] | None = N
 def _coupon(kind: str, picks: list[dict], note: str) -> dict:
     sources = {p["odds_source"] for p in picks}
     source = sources.pop() if len(sources) == 1 else ("karışık" if sources else None)
-    model_picks = [p for p in picks if not p.get("small_league")]
+    model_picks = [p for p in picks if not (p.get("small_league") or p.get("market_only"))]
     calibrated = sum(bool(p.get("calibration_applied")) for p in model_picks)
     calibration_status = ("not_applicable" if picks and not model_picks else
                           "complete" if model_picks and calibrated == len(model_picks) else
@@ -158,7 +159,7 @@ def _coupon(kind: str, picks: list[dict], note: str) -> dict:
             "selection_tier": picks[0].get("selection_tier") if picks else "unavailable",
             "target_met": bool(picks and picks[0].get("target_met")),
             "calibration_status": calibration_status, "calibration_note": calibration_note,
-            "market_only_picks": sum(bool(p.get("small_league")) for p in picks),
+            "market_only_picks": sum(bool(p.get("small_league") or p.get("market_only")) for p in picks),
             "picks": picks, "stake_note": note, "odds_source": source,
             "iddaa_picks": sum(p["odds_source"] == "iddaa" for p in picks),
             "total_odds": round(math.prod(p["odds"] for p in picks), 2) if picks else 0,
@@ -200,6 +201,7 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
             continue
         candidates = []
         for choice in choices:
+            market_only=bool(prediction.get("small_league") or choice.get("market_only"))
             if choice['odds_source'] != 'iddaa' or choice['market'] not in SUPPORTED_MARKETS:
                 counts["no_market_quote"] += 1
                 continue
@@ -223,14 +225,14 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
                 counts["combinations_rejected"] += 1
                 continue
             choice = {**choice, "min_matches": required_matches}
-            if banko and not prediction.get("small_league") and not choice.get("calibration_applied"):
+            if banko and not market_only and not choice.get("calibration_applied"):
                 # Az ileriye dönük kayıt, takım modelinin hiç çalışmaması demek değildir.
                 # Tahmini düzeltmeden kullan; eksik kanıtı kuponda açıkça göster.
                 counts["calibration_insufficient"] += 1
                 counts["calibration_best_n"] = max(counts["calibration_best_n"], int(choice.get("calibration_n") or 0))
-            conf = (P.confidence(choice['p'], n) if not prediction.get("small_league")
+            conf = (P.confidence(choice['p'], n) if not market_only
                     else {"confidence": None, "confidence_label": "Model güveni yok", "confidence_reason": None})
-            if not prediction.get("small_league") and not choice.get('calibration_applied'):
+            if not market_only and not choice.get('calibration_applied'):
                 conf['confidence']=min(conf['confidence'],.69)
                 conf['confidence_label']=P.confidence_label(conf['confidence'])
                 conf['confidence_reason']+='; kalibrasyon kanıtı yetersiz'
