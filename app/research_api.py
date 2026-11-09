@@ -1,6 +1,7 @@
 """Opt-in, machine-authenticated research API; no paid LLM clients."""
 import os
 import re
+import json
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
@@ -11,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from . import research_service as service, research_store as store
 from .research_models import ResearchResult
+from . import grok_skill_adapter
 
 MAX_BODY_BYTES = 128 * 1024
 NO_STORE = {'Cache-Control': 'private, no-store', 'CDN-Cache-Control': 'no-store',
@@ -77,6 +79,34 @@ def match_context(request: Request, match_id: str, job_id: str = Query(..., max_
 @router.post('/jobs/{job_id}/claim')
 def claim(request: Request, job_id: str):
     return service.claim(request.state.research_principal, job_id)
+
+
+@router.post('/jobs/{job_id}/renew')
+def renew(request: Request, job_id: str):
+    lease = request.headers.get('x-research-claim', '')
+    if not lease or len(lease) > 256:
+        raise HTTPException(422, 'İş üstlenme başlığı gerekli')
+    return service.renew_claim(request.state.research_principal, job_id, lease)
+
+
+@router.post('/jobs/{job_id}/skill-results')
+async def skill_results(request: Request, job_id: str):
+    principal = request.state.research_principal
+    service.scope(principal, 'reports:write')
+    if request.headers.get('content-type', '').split(';')[0].strip().lower() != 'application/json':
+        raise HTTPException(415, 'application/json gerekli')
+    key = request.headers.get('idempotency-key', '')
+    lease = request.headers.get('x-research-claim', '')
+    version = request.headers.get('x-skill-version', '')
+    if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,100}', key) or not lease or len(lease) > 256 or not 1 <= len(version) <= 80:
+        raise HTTPException(422, 'Idempotency-Key, X-Research-Claim ve X-Skill-Version gerekli')
+    try:
+        raw = json.loads(await request.body())
+    except (ValueError, UnicodeDecodeError):
+        raise HTTPException(422, 'Geçersiz JSON') from None
+    job = await run_in_threadpool(service.assigned_job, principal, job_id)
+    result = grok_skill_adapter.adapt(raw, job, version)
+    return await run_in_threadpool(service.save_result, principal, job_id, result, lease, key)
 
 
 @router.post('/jobs/{job_id}/results')

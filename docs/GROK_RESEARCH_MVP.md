@@ -1,5 +1,49 @@
 # Grok araştırma API — üretim dışı MVP pilot
 
+## Skill uyumluluğu güncellemesi
+
+`POST /api/research/jobs/{job_id}/skill-results`, tek maçlık `football-match-intel`
+çıktısını sunucudaki iş kaydıyla bağlayıp doğrulanmış ResearchResult'a dönüştürür.
+Mevcut `/results` korunur. `Idempotency-Key`, `X-Research-Claim` ve
+`X-Skill-Version` başlıkları gereklidir. Gövde ve dönüştürülmüş sonuç 128 KiB
+sınırındadır. `job_id`, `match_id`, `mode` ve `input_version` sunucudan alınır;
+Skill bu alanları verirse eşleşmeleri kontrol edilir, uyuşmazlık 409'dur. Skill'in
+`matches` listesi tam bir maç içermeli ve match_id atanmış kimlikle aynı olmalıdır.
+
+Durumlar: `confirmed_official` ve `confirmed_independent` → `confirmed`;
+`single_source` → `reported`; `conflicting` → `conflicting`; `unverified`,
+`not_found`, `outdated` → `unknown`. Orijinal durum, etki, bulgu kimliği ve kaynak
+gözlemleri bulgu alt alanlarında korunur. Bağımsız doğrulama beyanı için en az iki
+farklı kaynak ve bağımsız kaynak sayısı en az iki; çelişki için iki kaynak gerekir.
+Resmî kaynak türü açıkça yoksa `confirmed_official` daha temkinli `reported` olarak
+taşınır; orijinal durum ve nedeni korunur. Bu kontroller iddiaların, resmî kaynak
+türünün veya kaynak bağımsızlığının bağımsız doğrulandığını göstermez.
+
+Kaynaklar URL'ye göre tekilleştirilir; her bulgunun referansı ve kaynak kökeni
+korunur. Kaynak erişimi için `accessed_at` veya ilgili bulgunun `checked_at` değeri
+gereklidir; bunlar yoksa zaman uydurulmaz. `published_at` yalnızca tarih içeriyorsa
+`published_date` alanında gün hassasiyetiyle saklanır, saatli alan null kalır.
+Form/kadro/fixture içindeki ayrı URL'ler, erişim anı kanıtı bulunmadığı için kaynak
+gözlemi diye üretilmez; ilgili `skill_details` altında, doğrulanmamış bağlam olarak
+korunur. `model_prior` da `other` bulgusu altında yapılandırılmış veri olarak
+korunur; model hesaplamalarını değiştirmez veya doğrulanmış kaynak sayılmaz.
+
+`probable/predicted` kadro `predicted` olur. İki takım için resmî kadro beyanı,
+ilgili kaynağa bağlı `lineup` bulgusu ve açık resmî kaynak türü varsa `official`
+olarak taşınır; bu kaynak türü ve iddia bağımsız doğrulama değildir. Kanıt
+bağlamı yetersizse `unknown` kalır ve orijinal beyan ayrıntıda korunur.
+Ham JSON arşivlenmez. Bilinen gizli alan/başlık ve URL kimlik bilgisi kalıpları
+reddedilir; serbest metindeki her olası sırrın otomatik saptanması garanti edilemez.
+Bu nedenle Skill girdisine credential veya kullanıcıya özel gizli içerik konmamalı.
+
+Uzun araştırma için `POST /api/research/jobs/{job_id}/renew` eklendi; `jobs:claim`
+kapsamı ve geçerli `X-Research-Claim` gerekir. Yeni token eskisini derhal geçersiz
+kılar, bitiş en fazla 20 dakika uzar ve iş deadline'ını geçmez. Süresi dolan token
+yenilenmez; deadline geçmediyse iş yeniden claim edilebilir. Eşzamanlı yenilemede
+yalnız biri kazanır. Bu işlem ücretli LLM API çağrısı veya otomasyon başlatmaz.
+Kayıttan sonra aynı sonucu güvenle tekrar istemek mevcut token ile mümkündür;
+yenileme öncesindeki token tekrar isteğinde de reddedilir.
+
 Bu özellik Grok/xAI/OpenAI istemcisi içermez, LLM API çağrısı yapmaz ve Grok üzerinde
 rutin oluşturmaz. API varsayılan olarak kapalıdır. Mevcut öneri motoru, Poisson/Elo,
 haber etkileri, kalibrasyon ve kupon seçimi değiştirilmedi.

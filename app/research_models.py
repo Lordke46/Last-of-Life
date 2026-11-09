@@ -22,6 +22,9 @@ class Source(StrictModel):
     published_at: AwareDatetime | None = None
     accessed_at: AwareDatetime
     kind: Literal['club', 'league', 'federation', 'media', 'other', 'unknown'] = 'unknown'
+    published_date: Annotated[str, Field(pattern=r'^\d{4}-\d{2}-\d{2}$')] | None = None
+    origin: Text | None = None
+    tier: Annotated[int, Field(ge=1, le=10)] | None = None
 
 
 class Finding(StrictModel):
@@ -32,6 +35,9 @@ class Finding(StrictModel):
     verification_status: EvidenceStatus = 'unknown'
     observed_at: AwareDatetime | None = None
     source_ids: Annotated[list[Identifier], Field(max_length=10)] = Field(default_factory=list)
+    original_status: Literal['confirmed_official', 'confirmed_independent', 'single_source', 'conflicting', 'unverified', 'not_found', 'outdated'] | None = None
+    qualitative_impact: Text | None = None
+    skill_details: dict | list | str | None = None
 
 
 class Assessment(StrictModel):
@@ -72,6 +78,10 @@ class ResearchResult(StrictModel):
                 raise ValueError('Evidence references an unknown source')
             if item.verification_status != 'unknown' and not item.source_ids:
                 raise ValueError('Reported, confirmed and conflicting claims require sources')
+        from .grok_skill_adapter import check_safe
+        for finding in self.findings:
+            if finding.skill_details is not None:
+                check_safe(finding.skill_details)
         if self.lineup_assessment.lineup_status == 'official':
             official = {source.id for source in self.sources if source.kind in ('club', 'league', 'federation')}
             if (self.lineup_assessment.verification_status != 'confirmed'

@@ -43,17 +43,22 @@ def verify(url):
     with patch.dict(os.environ, {'RESEARCH_DATABASE_URL': runtime_url, 'RESEARCH_API_ENABLED':'1', 'AUTH_REQUIRED':'1', 'LOCAL_AUTO_UPDATE':'0'}):
         with patch.object(store, 'session', lambda: connection(False)):
             job = service.enqueue('pg-grok', 'research-pg-match', 'full', (at+timedelta(hours=2)).isoformat())
+            skill_job = service.enqueue('pg-grok', 'research-pg-match', 'lineup_check', (at+timedelta(hours=2)).isoformat())
         with closing(TestClient(app)) as client:
             headers = {'Authorization':'Bearer '+key}
             response = client.get('/api/research/jobs',headers=headers)
             assert response.status_code == 200, response.text
-            assert response.json()['jobs'][0]['id'] == job['id']
+            assert job['id'] in {j['id'] for j in response.json()['jobs']}
             assert client.get('/api/research/schema',headers=headers).status_code == 200
             ctx = client.get('/api/research/matches/research-pg-match/context',params={'job_id':job['id']},headers=headers)
             assert ctx.status_code == 200, ctx.text
             response = client.post('/api/research/jobs/'+job['id']+'/claim',headers=headers)
             assert response.status_code == 200, response.text
             lease = response.json()['claim_token']
+            renewed = client.post('/api/research/jobs/'+job['id']+'/renew',headers={**headers,'X-Research-Claim':lease})
+            assert renewed.status_code == 200, renewed.text
+            assert client.post('/api/research/jobs/'+job['id']+'/renew',headers={**headers,'X-Research-Claim':lease}).status_code == 409
+            lease = renewed.json()['claim_token']
             payload = {'schema_version':'1.0','job_id':job['id'],'match_id':job['match_id'],'mode':'full',
                        'input_version':job['input_version'],'skill_name':'football-match-intel',
                        'skill_version':'test-only','researched_at':at.isoformat()}
@@ -65,6 +70,12 @@ def verify(url):
             assert client.post(url_path,json=payload,headers=upload).json()['duplicate']
             report = client.get('/api/research/reports/'+response.json()['report_id'],headers=headers)
             assert report.status_code == 200 and report.json()['applied_to_model'] is False, report.text
+            claimed = client.post('/api/research/jobs/'+skill_job['id']+'/claim',headers=headers).json()
+            skill = {'schema_version':'1.0','mode':'lineup_check','research_time':at.isoformat(),
+                     'matches':[{'match_id':skill_job['match_id'],'findings':[]}]}
+            upload_skill = {**headers,'Idempotency-Key':'pg-skill-result','X-Research-Claim':claimed['claim_token'],'X-Skill-Version':'test'}
+            converted = client.post('/api/research/jobs/'+skill_job['id']+'/skill-results',json=skill,headers=upload_skill)
+            assert converted.status_code == 200, converted.text
             with patch.dict(os.environ, {'RESEARCH_DATABASE_URL':url}):
                 assert client.get('/api/research/jobs',headers=headers).status_code == 503, 'Privileged DSN must fail closed'
 

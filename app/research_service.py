@@ -160,6 +160,26 @@ def claim(principal, job_id):
     return {'job': job_view(job, at), 'claim_token': token}
 
 
+def renew_claim(principal, job_id, lease):
+    scope(principal, 'jobs:claim')
+    at = now()
+    with store.session() as conn:
+        _transaction_lock(conn)
+        job = _job(conn, job_id, principal['id'], lock=True)
+        if timestamp(job['deadline']) <= at:
+            raise HTTPException(410, 'Araştırma işinin süresi doldu')
+        if (job['status'] != 'claimed' or not lease or not job['lease_hash']
+                or not hmac.compare_digest(sha(lease), job['lease_hash'])
+                or timestamp(job['lease_expires_at']) <= at):
+            raise HTTPException(409, 'Geçerli iş üstlenme belirteci gerekli')
+        token = secrets.token_urlsafe(32)
+        until = min(at + timedelta(minutes=LEASE_MINUTES), timestamp(job['deadline']))
+        conn.execute(f'UPDATE {store.table("jobs")} SET lease_hash=?,lease_expires_at=? WHERE id=?',
+                     (sha(token), until.isoformat(), job_id))
+        job.update(lease_expires_at=until.isoformat())
+    return {'job': job_view(job, at), 'claim_token': token}
+
+
 def _freshness(conn, job, at):
     # Re-check live SELECT-only context for reschedules, cancellations or changed inputs.
     try:
@@ -178,6 +198,13 @@ def save_result(principal, job_id, result, lease, idempotency_key):
     scope(principal, 'reports:write')
     at = now()
     payload = result.model_dump(mode='json')
+    # Preserve the pre-adapter representation and idempotency of existing clients.
+    for item in payload['sources']:
+        for key in ('published_date', 'origin', 'tier'):
+            if item[key] is None: item.pop(key)
+    for item in payload['findings']:
+        for key in ('original_status', 'qualitative_impact', 'skill_details'):
+            if item[key] is None: item.pop(key)
     payload_hash = context.digest(payload)
     with store.session() as conn:
         _transaction_lock(conn)
@@ -187,6 +214,8 @@ def save_result(principal, job_id, result, lease, idempotency_key):
             raise HTTPException(409, 'Sonuç iş, maç, mod veya girdi sürümüyle eşleşmiyor')
         existing = conn.execute(f'SELECT * FROM {store.table("report_revisions")} WHERE job_id=?', (job_id,)).fetchone()
         if existing:
+            if not lease or not job['lease_hash'] or not hmac.compare_digest(sha(lease), job['lease_hash']):
+                raise HTTPException(409, 'Geçerli iş üstlenme belirteci gerekli')
             if existing['idempotency_key'] != idempotency_key or existing['payload_hash'] != payload_hash:
                 raise HTTPException(409, 'Bu iş için farklı bir sonuç zaten kaydedildi')
             return {'report_id': existing['report_id'], 'revision': existing['revision'], 'duplicate': True,
@@ -217,6 +246,12 @@ def save_result(principal, job_id, result, lease, idempotency_key):
                      ('completed' if freshness == 'current' else 'expired', report_id, job_id))
     return {'report_id': report_id, 'revision': revision, 'duplicate': False,
             'freshness_status': freshness, 'validation_status': 'schema_valid'}
+
+
+def assigned_job(principal, job_id):
+    scope(principal, 'reports:write')
+    with store.session() as conn:
+        return _job(conn, job_id, principal['id'])
 
 
 def read_report(principal, report_id, revision=None):
