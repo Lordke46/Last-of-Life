@@ -1,14 +1,11 @@
 /* Last of Life V3: quiet hierarchy, warm surfaces, clear actions. */
 :root {
-  --v3-forest: #1f3d2b;
-  --v3-sand: #e8dcc4;
-  --v3-purple: #8b5cf6;
   --v3-radius: 18px;
-  --v3-soft-shadow: 0 12px 32px rgba(9, 28, 18, .16);
+  --v3-soft-shadow: 0 12px 32px rgba(0, 0, 0, .16);
 }
 body { letter-spacing: .005em; }
 .topbar { border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
-.brand-mark { background: var(--v3-purple); color: #fff; box-shadow: 0 4px 14px #8b5cf640; }
+.brand-mark { background: var(--button-bg); color: var(--button-text); box-shadow: none; }
 .brand-name b { letter-spacing: -.035em; }
 main { max-width: 1180px; }
 .workspace-heading { padding: clamp(18px, 4vw, 38px) 0 14px; }
@@ -31,13 +28,13 @@ main { max-width: 1180px; }
 .pick-text { display: grid; gap: 4px; }
 .pick-text > b { font-size: 17px; }
 .v3-probability { color: var(--text); font-size: 14px; font-weight: 750; }
-.pick-odds { min-width: 88px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); text-align: center; }
+.pick-odds { min-width: 88px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel2); color: var(--text); text-align: center; }
 .pick-odds small { display: block; max-width: 12ch; color: var(--muted); font-size: 10px; line-height: 1.2; }
 .pick-odds b { display: block; margin-top: 3px; font-size: 21px; }
 .v3-caveat { margin: 9px 0 0; color: var(--muted); font-size: 12px; }
 .pick-why { margin: 9px 0 0; color: var(--muted); font-size: 13px; }
 .m-actions { margin-top: 12px; }
-.m-actions .btn, .coupon-share-actions .btn { background: var(--v3-purple); color: #fff; border-color: transparent; font-weight: 750; }
+.m-actions .btn, .coupon-share-actions .btn { background: var(--button-bg); color: var(--button-text); border-color: transparent; font-weight: 750; }
 .coupon-group { margin: 24px 0; }
 .coupon-group > h3 { margin: 0 0 10px; font-size: clamp(19px, 3vw, 24px); letter-spacing: -.025em; }
 .coupon-card { margin: 12px 0; padding: clamp(14px, 3vw, 22px); }
@@ -47,7 +44,7 @@ main { max-width: 1180px; }
 .coupon-card td { font-size: 14px; }
 .coupon-total { margin-top: 12px; padding: 12px; border-radius: 12px; background: var(--panel2); }
 .coupon-share-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
-.tabs { box-shadow: 0 -8px 24px rgba(9, 28, 18, .12); }
+.tabs { box-shadow: 0 -8px 24px rgba(0, 0, 0, .12); }
 .tabs > button.active { color: var(--accent2); }
 button, a, input, select { touch-action: manipulation; }
 :focus-visible { outline-offset: 3px; }
@@ -77,3 +74,9 @@ button, a, input, select { touch-action: manipulation; }
   .coupon-card td::before { content: attr(data-label); color: var(--muted); font-size: 11px; }
   .coupon-card td:first-child::before { display: none; }
 }
+
+/* A candidate remains visible, with its qualification next to the choice. */
+.v3-target-note { margin: 10px 0 0; padding-top: 10px; border-top: 1px solid var(--line); color: var(--text); font-size: 12px; line-height: 1.5; }
+.v3-pick.is-candidate .hero-label { color: var(--muted); }
+.v3-pick.is-candidate { border-style: dashed; }
+.m-actions .btn:hover, .coupon-share-actions .btn:hover { background: var(--button-hover); color: var(--button-text); }

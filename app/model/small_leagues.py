@@ -84,14 +84,18 @@ def bulletin_event(event: dict) -> dict:
             or (event.get('quote_provenance') is not None and not any(fresh(event,k) for k,v in markets.items() if v.get('p') is not None and k in odds))):
         result['decision']={'status':'no_bet','reason':'no_current_prematch_quotes'}
         return result
-    from .predict import candidate
+    from .predict import candidate, PICK_MIN_P, PICK_MIN_ODDS, PICK_MAX_ODDS
     eligible={k:v for k,v in markets.items() if event.get('quote_provenance') is None or fresh(event,k)}
     selection = candidate(eligible, odds)
     if selection:
         selection.update(candidate_type='market_candidate', probability_source='iddaa_market',
                          policy='market_candidate_v1', model_available=False)
-        # Bu aday piyasa olasılığıdır; model için kullanılan p>=%56 güven filtresi uygulanmaz.
-        if 1.40 <= selection['odds'] <= 2.30:
+        # Keep a below-threshold choice available without presenting it as a preferred pick.
+        target_met = (selection['p'] >= PICK_MIN_P
+                      and PICK_MIN_ODDS <= selection['odds'] <= PICK_MAX_ODDS)
+        selection.update(target_met=target_met,
+                         selection_tier='preferred' if target_met else 'best_available')
+        if target_met:
             selection['candidate_status']='market_candidate'
         result['pick']=selection
     return result

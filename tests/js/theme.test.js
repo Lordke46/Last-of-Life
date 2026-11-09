@@ -15,21 +15,21 @@ function theme(saved) {
   });
   return {root, meta, attributes, writes, button, click: () => click()};
 }
-test('new visitors get the forest palette and can persist sand mode', () => {
+test('new visitors get the black palette and can persist white mode', () => {
   const ui = theme();
-  assert.equal(ui.meta.content, '#1F3D2B');
+  assert.equal(ui.meta.content, '#080808');
   assert.equal(ui.attributes['aria-pressed'], 'false');
   ui.click();
   assert.equal(ui.root.dataset.theme, 'light');
-  assert.equal(ui.meta.content, '#E8DCC4');
+  assert.equal(ui.meta.content, '#FAFAFA');
   assert.equal(ui.button.title, 'Koyu temaya geç');
   assert.deepEqual(ui.writes[0], ['theme', 'light']);
 });
-test('saved sand preference survives initialization and toggles back to forest', () => {
+test('saved light preference survives initialization and toggles back to black', () => {
   const ui = theme('light');
-  assert.equal(ui.meta.content, '#E8DCC4');
+  assert.equal(ui.meta.content, '#FAFAFA');
   assert.equal(ui.attributes['aria-pressed'], 'true');
   ui.click();
-  assert.equal(ui.meta.content, '#1F3D2B');
+  assert.equal(ui.meta.content, '#080808');
   assert.equal(ui.root.dataset.theme, 'dark');
 });

@@ -10,7 +10,7 @@ from .config import BASE_DIR, STATIC_DIR
 
 router = APIRouter()
 
-THEME_COLOR = "#1F3D2B"
+THEME_COLOR = "#080808"
 SW_TEMPLATE = BASE_DIR / "app" / "sw.js"
 NO_CACHE = {"Cache-Control": "no-cache"}  # her zaman yeniden doğrulanır (güncelleme algılama için şart)
 

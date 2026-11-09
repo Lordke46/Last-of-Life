@@ -184,9 +184,11 @@ def summarize(item: dict) -> dict:
     odd=selected.get('odds')
     if item.get('small_league') or selected.get('probability_source')=='iddaa_market':
         status=selected.get('candidate_status')
-        note='1,40–2,30 bandı dışında; ' if status=='outside_band' else ''
+        fallback=selected.get('target_met') is False or status in ('below_threshold','outside_band')
+        note=('1,40–2,30 bandı dışında; ' if status=='outside_band'
+              else 'Tercih edilen olasılık eşiğinin altında; ' if fallback else '')
         return summary(market,title(market),f"{note}Marjı temizlenmiş iddaa piyasa olasılığı %{probability*100:.0f}; takım modeli güveni değildir.",
-                       label='Piyasa adayı',odd=odd)
+                       label='Aday seçenek' if fallback else 'Piyasa adayı',odd=odd)
     if alternative:
         status=alternative.get('candidate_status')
         if status=='odds_missing':
