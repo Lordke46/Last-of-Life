@@ -104,9 +104,10 @@ class BankoTest(unittest.TestCase):
     def test_banko_diagnostics_explain_missing_picks(self):
         entries = [entry(i, {"1": (.61, 1.40)}) for i in (1, 2)]
         report = {}
-        self.assertEqual(cp._select_balanced(entries, "banko", 1, report), [])
-        self.assertGreater(report["low_probability"], 0)
-        self.assertEqual(report["selected_coupons"], 0)
+        picks = cp._select_balanced(entries, "banko", 1, report)
+        self.assertTrue(picks)
+        self.assertEqual(report["selection_tier"], "available_fallback")
+        self.assertFalse(report["target_met"])
 
     def test_probability_ranks_before_confidence_score_and_price(self):
         first = entry(1, {"1": (.80, 1.50)})
@@ -118,7 +119,9 @@ class BankoTest(unittest.TestCase):
         prediction = pred(1, {"1": (.75, 1.65)})
         prediction["calibration_by_market"]["1"].update(p=.60)
         entries = [(prediction, _choices(prediction, {"1": 1.65})), entry(2, {"1": (.75, 1.65)})]
-        self.assertEqual(select_banko(entries), [])
+        picks = select_banko(entries)
+        self.assertTrue(picks)
+        self.assertFalse(picks[0]["target_met"])
 
     def test_raw_model_probability_is_not_replaced_by_calibrated_probability(self):
         prediction = pred(1, {"1": (.75, 1.65)})
@@ -138,12 +141,12 @@ class BankoTest(unittest.TestCase):
     def test_verified_missing_season_results_are_not_automatic_coupon_candidates(self):
         entries=[entry(i,{'1':(.75,1.6)}) for i in (1,2)]
         for p,_ in entries:p['data_integrity']={'history_complete':False}
-        self.assertEqual(select_banko(entries),[])
+        self.assertTrue(select_banko(entries))  # verified live market quote remains eligible
 
     def test_sparse_data_and_fake_odds_are_not_banko_candidates(self):
         entries=[entry(i,{'1':(.8,1.6)}) for i in (1,2)]
         entries[0][0]['data_n']=3
-        self.assertEqual(select_banko(entries),[])
+        self.assertTrue(select_banko(entries))  # low n is disclosed, not an automatic veto
         entries=[entry(i,{'1':(.8,1.6)},iddaa={}) for i in (1,2)]
         self.assertEqual(select_banko(entries),[])
 
@@ -159,19 +162,32 @@ class BankoTest(unittest.TestCase):
         self.assertEqual(select_banko(entries[:2]),[])
         self.assertEqual(len(select_banko(entries)),3)
 
+    def test_impossible_large_mbs_market_does_not_hide_lower_mbs_option(self):
+        first = entry(1, {"1": (.90, 1.6), "X": (.69, 1.8)})
+        first[1][0]["min_matches"] = 20
+        first[1][1]["min_matches"] = 1
+        entries = [first, entry(2, {"1": (.69, 1.8)}), entry(3, {"1": (.69, 1.8)})]
+        picks = select_banko(entries)
+        self.assertTrue(picks)
+        self.assertNotIn("1", [p["market"] for p in picks if p["id"] == 1])
+
     def test_banko_cannot_trade_hit_probability_for_an_odds_floor(self):
         entries=[entry(i,{'Ü1.5':(.84,1.20),'1':(.71,1.7)}) for i in (1,2)]
         picks=select_banko(entries)
         self.assertEqual([p['market'] for p in picks],['Ü1.5','Ü1.5'])
         self.assertAlmostEqual(math.prod(p['odds'] for p in picks),1.44)
         self.assertGreaterEqual(math.prod(p['p'] for p in picks),.50)
-        self.assertEqual(select_banko([entry(i,{'1':(.70,1.6)}) for i in (1,2)]),[])
+        fallback = select_banko([entry(i,{'1':(.70,1.6)}) for i in (1,2)])
+        self.assertTrue(fallback)
+        self.assertFalse(fallback[0]["target_met"])
 
     def test_low_price_and_longshots_do_not_force_a_coupon(self):
         for odds in (1.08,3.5):
-            self.assertEqual(select_banko([entry(i,{'1':(.8,odds)}) for i in (1,2)]),[])
+            fallback = select_banko([entry(i,{'1':(.8,odds)}) for i in (1,2)])
+            self.assertTrue(fallback)
+            self.assertFalse(fallback[0]["target_met"])
         self.assertEqual(select_banko([]),[])
-        self.assertEqual(select_banko([entry(1,{'1':(.8,1.6)})]),[])
+        self.assertEqual(len(select_banko([entry(1,{'1':(.8,1.6)})])),1)
 
     def test_experimental_markets_remain_manual_candidates(self):
         p,choices=entry(1,{'İY 1':(.8,1.6)})
@@ -186,8 +202,18 @@ class SurpriseTest(unittest.TestCase):
         self.assertTrue(8<=math.prod(p['odds'] for p in picks)<=25)
         self.assertTrue(all(p['market']=='1' for p in picks))
 
+    def test_fallback_prefers_feasible_total_odds_band_over_lottery_total(self):
+        entries = [entry(i, {"X": (.30, 2.5), "2": (.20, 9.0)}) for i in range(1, 5)]
+        picks = select_surprise(entries)
+        self.assertTrue(picks)
+        self.assertFalse(picks[0]["target_met"])
+        self.assertTrue(8 <= math.prod(p["odds"] for p in picks) <= 25)
+        self.assertTrue(all(p["odds"] == 2.5 for p in picks))
+
     def test_lottery_odds_and_synthetic_quotes_are_excluded(self):
-        self.assertEqual(select_surprise([entry(i,{'X':(.15,9)}) for i in range(1,6)]),[])
+        fallback = select_surprise([entry(i,{'X':(.15,9)}) for i in range(1,6)])
+        self.assertTrue(fallback)
+        self.assertFalse(fallback[0]["target_met"])
         self.assertEqual(select_surprise([entry(i,{'1':(.5,2.2)},iddaa={}) for i in range(1,6)]),[])
 
     def test_alternate_market_can_reach_target_without_adding_a_match(self):
@@ -243,6 +269,37 @@ class SmallLeagueCouponTest(unittest.TestCase):
         prediction, choices = self.market_entry(1, {"Ü1.5": 1.75, "A1.5": 2.1})
         self.assertEqual([c["market"] for c in choices], ["Ü1.5", "A1.5"])
         self.assertEqual(small_league_recommendation(prediction, choices)["market"], "Ü1.5")
+
+    def test_fresh_small_market_entries_back_both_daily_coupon_types(self):
+        entries = [self.market_entry(i, {"Ü1.5": 1.75, "A1.5": 2.1}) for i in range(1, 5)]
+        banko = select_banko(entries)
+        surprise = select_surprise(entries)
+        self.assertTrue(banko and surprise)
+        self.assertTrue(all(p["small_league"] and p["market_only"] for p in banko + surprise))
+        self.assertTrue(all(p["probability_source"] == "iddaa_market" and p["confidence"] is None
+                            for p in banko + surprise))
+        self.assertTrue(all(p["odds_source"] == "iddaa" for p in banko + surprise))
+
+    def test_small_daily_selectors_reject_stale_and_duplicate_quotes(self):
+        stale = {"last_fetch_status": "failed", "quotes": {"Ü1.5": {}}}
+        stale_entries = [self.market_entry(i, {"Ü1.5": 1.75, "A1.5": 2.1}, provenance=stale)
+                         for i in (1, 2, 3)]
+        self.assertEqual(select_banko(stale_entries), [])
+        self.assertEqual(select_surprise(stale_entries), [])
+        duplicated = [self.market_entry(1, {"Ü1.5": 1.75, "A1.5": 2.1})] * 3
+        self.assertEqual(len(select_banko(duplicated)), 1)
+        self.assertEqual(len(select_surprise(duplicated)), 1)
+
+    def test_small_daily_fallback_is_labeled_and_obeys_market_min_matches(self):
+        entries = [self.market_entry(i, {"Ü1.5": 1.75, "A1.5": 2.4},
+                                     min_matches={"Ü1.5": 3, "A1.5": 3}) for i in (1, 2, 3)]
+        banko = select_banko(entries)
+        surprise = select_surprise(entries)
+        self.assertEqual(len(banko), 3)
+        self.assertEqual(len(surprise), 3)
+        self.assertTrue(all(p["selection_tier"] == "available_fallback" and not p["target_met"]
+                            for p in banko))
+        self.assertTrue(all(p["min_matches"] == 3 for p in banko + surprise))
 
     def test_small_coupon_alternatives_are_distinct_and_rank_probability_then_size(self):
         entries = [self.market_entry(i, {"Ü1.5": 1.75, "A1.5": 2.1}) for i in range(1, 5)]
@@ -348,6 +405,41 @@ class BuildCouponsTest(unittest.TestCase):
             r = cp.build_coupons(date(2026, 1, 1))
         self.assertEqual((r["banko"]["picks"], r["surprise"]["picks"], r["matches"]), ([], [], 0))
         self.assertEqual((r["banko_alternatives"], r["surprise_alternatives"]), ([], []))
+
+    def test_small_only_day_builds_daily_banko_and_surprise_with_real_fresh_quotes(self):
+        target = (datetime.now(cp.TZ) + timedelta(days=1)).date()
+        kickoff = datetime.combine(target, datetime.min.time(), cp.TZ).replace(hour=18).astimezone(timezone.utc).isoformat()
+        quote_time = datetime.now(timezone.utc).isoformat()
+        quotes = {"1": 1.3, "X": 4.2, "2": 7.5}
+        ids = [f"small-{i}" for i in range(4)]
+        with db.session() as conn:
+            for event_id in ids:
+                conn.execute("""INSERT INTO iddaa_events
+                    (id, league, competition_id, kickoff, home, away, league_name, country, is_small, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                    (event_id, "small:test:league", 123, kickoff, f"H{event_id}", f"A{event_id}",
+                     "Test League", "Testland", quote_time))
+                for market, odd in quotes.items():
+                    conn.execute("INSERT INTO iddaa_odds(event_id, market, odd) VALUES (?, ?, ?)",
+                                 (event_id, market, odd))
+        observed = {}
+        for event_id in ids:
+            observed[event_id] = {"last_fetch_status": "success", "quotes": {
+                market: {"odd": odd, "cache_status": "network_no_cache_evidence", "quote_observed_at": quote_time}
+                for market, odd in quotes.items()}}
+        with patch.object(cp, "LEAGUES", {}), patch.object(cp, "_day_entries", lambda day: []), \
+             patch.object(cp.quote_provenance, "for_event", lambda state, event_id: observed[event_id]):
+            result = cp.build_coupons(target)
+        self.assertGreaterEqual(result["matches"], 4)
+        self.assertTrue(result["banko"]["picks"])
+        self.assertTrue(result["surprise"]["picks"])
+        self.assertEqual(result["banko"]["picks"][0]["probability_source"], "iddaa_market")
+        self.assertEqual(result["surprise"]["picks"][0]["probability_source"], "iddaa_market")
+        self.assertEqual(result["banko"]["selection_tier"], "available_fallback")
+        self.assertFalse(result["banko"]["target_met"])
+        self.assertEqual(result["surprise"]["selection_tier"], "available_fallback")
+        self.assertFalse(result["surprise"]["target_met"])
+        self.assertEqual(result["banko"]["calibration_status"], "not_applicable")
 
     def test_build_scans_main_leagues_together_and_keeps_legacy_coupon_fields(self):
         target = (datetime.now(cp.TZ) + timedelta(days=2)).date()
