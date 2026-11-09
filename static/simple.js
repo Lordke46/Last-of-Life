@@ -121,5 +121,14 @@
     return `<div class="prematch-history"><div class="hero-label">Maç öncesi öneri</div><div class="history-choice"><b>${esc(headline(pick.market))} · ${esc(title(pick.market))}</b><span>Kayıtlı oran <b>${pick.odds.toFixed(2)}</b></span></div>${Number.isFinite(pick.p) ? `<p>${Math.round(pick.p*100)}% ${pick.probability_source === "iddaa_market" ? "piyasa olasılığı" : "tahmini olasılık"}</p>` : ""}<small>${esc(time)} tarihinde kaydedildi. Güncel bahis fiyatı değildir.</small></div>`;
   }
 
-  return { headline, title, info, levelBadge, oddsBox, pickBlock, strongestPickBlock, historyBlock, confidenceLevel, sortMatches, filterMatches };
+  function mergeLiveScores(previous, incoming) {
+    const merged=new Map(incoming.map(score=>[String(score.id),score]));
+    for (const [id,score] of previous) {
+      const next=merged.get(id);
+      if (score.state === "post" && (!next || (next.state !== "post" && next.kickoff === score.kickoff))) merged.set(id,score);
+    }
+    return merged;
+  }
+
+  return { headline, title, info, levelBadge, oddsBox, pickBlock, strongestPickBlock, historyBlock, mergeLiveScores, confidenceLevel, sortMatches, filterMatches };
 });

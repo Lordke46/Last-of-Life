@@ -65,7 +65,7 @@ async function refreshLive() {
     const day=state.bulletinDay;
     const data = await api(`/api/live?day=${encodeURIComponent(day)}`,{cache:"no-store"});
     if(day !== state.bulletinDay) return;
-    state.live = new Map((data.matches || []).map((m) => [String(m.id), { ...m, updated_at: data.sources?.[m.source_key || m.league]?.last_success_at || data.updated_at }]));
+    state.live = Simple.mergeLiveScores(state.live,(data.matches || []).map((m) => ({ ...m, updated_at: data.sources?.[m.source_key || m.league]?.last_success_at || data.updated_at })));
     if ($("#liveState")) $("#liveState").textContent = data.stale ? "Canlı skorların bir kısmı güncel değil; son alınan veriler gösteriliyor." : "";
     document.querySelectorAll(".match[data-id]").forEach((card) => {
       const item=state.matchList?.find(item=>String(item.id) === card.dataset.id);

@@ -121,3 +121,13 @@ test('no old recommendation is fabricated and a future record stays out of the h
  assert.match(Simple.historyBlock({kickoff:'2020-01-01T12:00Z'}),/kaydedilmiş maç öncesi öneri yok/);
  assert.equal(Simple.historyBlock({prematch_recommendation:{kickoff:'2099-01-01T12:00Z',pick:{market:'1',odds:1.8}}}), '');
 });
+
+test('verified finals remain visible after leaving the live feed, while live rows can expire',()=>{
+ const final={id:'done',state:'post',home_goals:2,away_goals:1,kickoff:'2026-11-09T18:00Z'};
+ const previous=new Map([['done',final],['playing',{id:'playing',state:'in'}]]);
+ const merged=Simple.mergeLiveScores(previous,[]);
+ assert.equal(merged.get('done'),final);
+ assert.equal(merged.has('playing'),false);
+ assert.equal(Simple.mergeLiveScores(previous,[{...final,state:'in'}]).get('done').state,'post');
+ assert.equal(Simple.mergeLiveScores(previous,[{...final,away_goals:2}]).get('done').away_goals,2);
+});
