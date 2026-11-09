@@ -20,7 +20,8 @@ test("server summary is rendered with 3-level badge and no jargon", () => {
 test('primary choice surfaces estimated chance, actual odds, and best-available status',()=>{
  const html=Simple.pickBlock({pick:{market:'1',p:.54,odds:1.82,selection_tier:'best_available',target_met:false},
   iddaa_odds:{1:1.82},summary:{market:'1',headline:'MS 1',title:'Ev sahibi kazanır',odds:1.82,level:1,level_label:'Düşük',reason:'Kısa gerekçe.'}});
- assert.match(html,/Önerilen seçim/);
+ assert.match(html,/Aday seçenek/);
+ assert.doesNotMatch(html,/Önerilen seçim/);
  assert.match(html,/54% tahmini olasılık/);
  assert.match(html,/Gerçek iddaa oranı/);
  assert.match(html,/Hedef eşiği karşılanmadı/);
@@ -33,6 +34,26 @@ test('small-league market probability is labeled as market data, not model outpu
  assert.match(html,/63% tahmini olasılık/);
  assert.match(html,/Piyasa olasılığı/);
  assert.doesNotMatch(html,/Model tahmini/);
+ assert.match(html,/Piyasa adayı/);
+ assert.doesNotMatch(html,/Önerilen seçim/);
+});
+
+test('low market candidate is qualified in summary and legacy detail paths',()=>{
+ const pick={market:'1',p:.38,odds:2.28,probability_source:'iddaa_market',
+  target_met:false,selection_tier:'best_available',candidate_status:'below_threshold'};
+ for(const summary of [undefined,{market:'1',headline:'MS 1',title:'Ev sahibi kazanır',odds:2.28,level:0}]) {
+  const html=Simple.pickBlock({small_league:true,pick,summary});
+  assert.match(html,/Aday seçenek/);
+  assert.match(html,/38% tahmini olasılık/);
+  assert.match(html,/Hedef eşiği karşılanmadı/);
+  assert.doesNotMatch(html,/Önerilen seçim|Düşük güven|Model tahmini/);
+ }
+});
+
+test('cached below-threshold pick without new metadata still appears as a candidate',()=>{
+ const html=Simple.pickBlock({small_league:true,pick:{market:'1',p:.38,odds:2.28,candidate_status:'below_threshold'}});
+ assert.match(html,/Aday seçenek/);
+ assert.doesNotMatch(html,/Önerilen seçim/);
 });
 
 test("highest-probability view requires distinct backend-eligible iddaa pick", () => {

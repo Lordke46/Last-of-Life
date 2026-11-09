@@ -3,7 +3,7 @@
   const current = () => root.dataset.theme || "dark";
   const apply = () => {
     const light = current() === "light";
-    document.querySelector('meta[name="theme-color"]').content = light ? "#E8DCC4" : "#1F3D2B";
+    document.querySelector('meta[name="theme-color"]').content = light ? "#FAFAFA" : "#080808";
     btn.setAttribute("aria-pressed", String(light));
     btn.title = light ? "Koyu temaya geç" : "Açık temaya geç";
   };

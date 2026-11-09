@@ -113,6 +113,28 @@ if __name__ == "__main__":
 
 
 class BulletinCandidateTests(unittest.TestCase):
+    def test_low_probability_choice_keeps_below_threshold_status_in_api_summary(self):
+        from app.explain import summarize
+        result=bulletin_event({'id':'low','small_league':True,
+                              'iddaa_odds':{'1':2.28,'X':2.86,'2':2.75}})
+        self.assertLess(result['pick']['p'],.56)
+        self.assertEqual(result['pick']['candidate_status'],'below_threshold')
+        self.assertFalse(result['pick']['target_met'])
+        self.assertEqual(result['pick']['selection_tier'],'best_available')
+        self.assertEqual(summarize(result)['recommendation_label'],'Aday seçenek')
+        self.assertIsNone(result['confidence'])
+
+    def test_preferred_market_choice_is_still_not_model_confidence(self):
+        result=bulletin_event({'id':'preferred','iddaa_odds':{'1':1.6,'X':4.,'2':6.}})
+        self.assertTrue(result['pick']['target_met'])
+        self.assertEqual(result['pick']['candidate_status'],'market_candidate')
+        self.assertIsNone(result['confidence'])
+
+    def test_outside_band_choice_keeps_qualification(self):
+        result=bulletin_event({'id':'outside','iddaa_odds':{'1':1.1,'X':9.,'2':15.}})
+        self.assertFalse(result['pick']['target_met'])
+        self.assertEqual(result['pick']['candidate_status'],'outside_band')
+
     def test_small_league_gets_a_medium_price_market_candidate_without_model_confidence(self):
         result=bulletin_event({'id':'source','iddaa_odds':{'1':2.0,'X':3.5,'2':4.0,'A2.5':1.8,'Ü2.5':1.9}})
         pick=result['pick']

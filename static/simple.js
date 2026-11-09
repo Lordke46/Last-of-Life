@@ -55,19 +55,19 @@
       const marketPick = m.pick?.probability_source === "iddaa_market" || !!m.small_league;
       const p = Number.isFinite(m.pick?.p) ? m.pick.p : Number.isFinite(m.markets?.[market]?.p) ? m.markets[market].p : null;
       return { ...m.summary, p, odds: m.summary.odds ?? m.pick?.odds ?? m.iddaa_odds?.[market] ?? null,
-        selectionTier: m.pick?.selection_tier, targetMet: m.pick?.target_met,
+        selectionTier: m.pick?.selection_tier, targetMet: m.pick?.target_met, candidateStatus: m.pick?.candidate_status,
         pSource: p == null ? "" : marketPick ? "market" : "model" };
     }
     const pick = m.pick || m.alternative;
     if (!pick) return { market: null, headline: "Veri bekleniyor", title: "Seçim hesabı için yeterli oran grubu veya model verisi yok", odds: null, level: 0, level_label: "", reason: "" };
-    const small = !!m.small_league;
+    const small = !!m.small_league || pick.probability_source === "iddaa_market";
     return {
       market: pick.market, headline: headline(pick.market), title: title(pick.market), p: pick.p ?? null,
       odds: pick.odds ?? m.iddaa_odds?.[pick.market] ?? null,
       level: small ? 0 : LEVELS[m.confidence_label] || 1, level_label: small ? "" : m.confidence_label || "",
       reason: small ? "Bu seçenek, marjı temizlenmiş iddaa piyasa olasılığına dayanır; takım modeli güveni değildir." : "",
       recommendation_label: small ? "Piyasa adayı" : "",
-      selectionTier: pick.selection_tier, targetMet: pick.target_met, pSource: small ? "market" : "model",
+      selectionTier: pick.selection_tier, targetMet: pick.target_met, candidateStatus: pick.candidate_status, pSource: small ? "market" : "model",
     };
   }
 
@@ -84,10 +84,13 @@
   /** Büyük öneri bloğu: [MS 2] Deplasman kazanır · güven · oran. */
   function pickBlock(m) {
     const s = info(m);
-    const targetNote = s.targetMet === false || s.selectionTier === "best_available"
-      ? `<p class="v3-target-note">Hedef eşiği karşılanmadı; bu, mevcut verideki en uygun adaydır.</p>` : "";
+    const fallback = s.targetMet === false || s.selectionTier === "best_available"
+      || ["below_threshold", "outside_band"].includes(s.candidateStatus);
+    const targetNote = fallback
+      ? `<p class="v3-target-note">Hedef eşiği karşılanmadı. ${s.candidateStatus === "outside_band" ? "Oran tercih bandının dışında." : "Bu seçim yalnızca aday olarak gösteriliyor."}</p>` : "";
+    const label = fallback ? "Aday seçenek" : s.pSource === "market" ? "Piyasa adayı" : "Önerilen seçim";
     const pSource = s.pSource === "market" ? "Piyasa olasılığı" : s.p != null ? "Model tahmini" : "";
-    return `<div class="v3-pick">${s.market ? `<div class="hero-label">Önerilen seçim</div>` : ""}<div class="pick-main">
+    return `<div class="v3-pick${fallback ? " is-candidate" : ""}">${s.market ? `<div class="hero-label">${label}</div>` : ""}<div class="pick-main">
       <span class="pick-chip${s.market ? "" : " none"}">${esc(s.headline)}</span>
       <div class="pick-text"><b>${esc(s.title)}</b>${s.market ? `<span class="v3-probability">${s.p == null ? "Olasılık yok" : `${Math.round(s.p * 100)}% tahmini olasılık`}</span>${pSource ? `<small class="v3-p-source">${pSource}</small>` : ""}${levelBadge(s.level, s.level_label)}` : ""}</div>
       ${s.market ? oddsBox(s.odds) : ""}
