@@ -1,0 +1,27 @@
+{
+  "scope": "same_published_small_coupon_candidates_counterfactual_not_outcome_backtest",
+  "day": "2026-11-09",
+  "old": {
+    "picks": 4,
+    "estimated_probability": 0.1278,
+    "odds": 3.95
+  },
+  "new": [
+    {
+      "picks": 3,
+      "estimated_probability": 0.213954204181,
+      "odds": 2.7439999999999993
+    },
+    {
+      "picks": 3,
+      "estimated_probability": 0.21377522291599999,
+      "odds": 2.8224
+    },
+    {
+      "picks": 3,
+      "estimated_probability": 0.21377522291599999,
+      "odds": 2.8224
+    }
+  ],
+  "limitation": "Market probabilities and independent-match product assumption; no accuracy or profit improvement has been established."
+}

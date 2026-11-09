@@ -42,3 +42,7 @@ Kullanıcı verileri ve kişisel kuponlara dokunulmayacak. Test edilmiş PR haz�
 - İlgili Python testleri: 45 geçti. Alternatif kupon arayüzü: 10 JavaScript testi geçti. Nihai tüm testler henüz çalıştırılmadı.
 
 Kapsam araştırması: ESPN esp.2 resmi scoreboard kaynağı 9 Kasım için iki maç veriyor. Bu maçlar mevcut uygulamada küçük lig olarak geçen İspanya ikinci lig karşılaşmalarıyla eşleştirilecek; doğrulanmamış organizasyon kimliğiyle otomatik model açılmayacak.
+
+## Aynı küçük lig adaylarıyla politika karşılaştırması
+
+9 Kasım canlı kuponundaki aynı dört aday üzerinde, mevcut kupon dört maç/3,95 oran/%12,78 piyasa çarpımı veriyor. Yeni seçici sağlayıcının minimum üç maç koşulunu koruyarak üç ayrı üç maçlı alternatif üretiyor; ilkinde 2,744 oran/%21,40 piyasa çarpımı var. Bu ölçüm gerçek sonuç isabeti değildir; aynı mevcut adayların farklı birleştirilmesidir. Tam veri [küçük kupon karşılaştırması](benchmarks/small-coupon-policy-2026-11-09.json).
