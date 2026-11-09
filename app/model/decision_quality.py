@@ -53,7 +53,16 @@ def apply(prediction, now=None):
                               'calibration_applied':True,'calibration_scope':calib.get('scope','league'),
                               'calibration_n':calib.get('n',0)} if calib.get('applied') else dict(item))
     pick = P.best_pick(eligible, actual_odds=prediction.get('iddaa_odds',{}))
+    if not pick:
+        candidate=P.candidate(eligible,prediction.get('iddaa_odds',{}))
+        if candidate:
+            pick={**candidate,'policy':'best_available_v3','selection_tier':'best_available',
+                  'target_met':False,'probability_source':'model_market_blend'}
+    if pick:
+        pick.setdefault('selection_tier','preferred')
+        pick.setdefault('target_met',True)
     out['pick'] = pick
+    if pick:out['alternative']=None
     strongest=P.best_pick(eligible,min_odds=1.15,actual_odds=prediction.get('iddaa_odds',{}))
     if strongest:
         strongest={**strongest,'estimated_edge':round(strongest['p']*strongest['odds']-1,4),'policy':'highest_probability_v1',**P.confidence(strongest['p'],prediction.get('data_n',0),data_integrity=prediction.get('data_integrity'))}

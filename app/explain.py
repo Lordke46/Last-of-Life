@@ -196,6 +196,8 @@ def summarize(item: dict) -> dict:
         return summary(market,title(market),chance+'1,40–2,30 oran bandı dışında; yalnız alternatif olarak gösteriliyor.',label='Oran bandı dışı',odd=odd)
     label=item.get('confidence_label') or 'Düşük'
     explanation=reason(item)
+    if pick.get('policy')=='best_available_v3':
+        explanation+=' Mevcut güncel seçenekler içindeki seçimdir; tercih edilen olasılık veya oran hedefine ulaşmıyor.'
     if pick.get('policy')=='balanced_v2':
         explanation+=' Seçim, 1,40–2,30 gerçek oran bandındaki seçeneklerden tahmini tutma ihtimali en yüksek olana göre yapılır.'
     return {'market':market,'headline':headline(market),'title':title(market,item['home'],item['away']),

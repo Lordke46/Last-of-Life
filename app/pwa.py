@@ -16,8 +16,8 @@ NO_CACHE = {"Cache-Control": "no-cache"}  # her zaman yeniden doğrulanır (gün
 
 MANIFEST = {
     "id": "/",
-    "name": "İddia Oran",
-    "short_name": "İddia Oran",
+    "name": "Last of Life V3",
+    "short_name": "Last of Life",
     "description": "Maç sonucu olasılıkları, önerilen oranlar ve günlük kupon önerileri.",
     "lang": "tr",
     "dir": "ltr",

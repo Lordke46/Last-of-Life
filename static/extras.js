@@ -176,5 +176,6 @@ window.Extras = (() => {
     else if (e.target.id === "ledFile" && e.target.files[0]) importLedger(e.target.files[0]);
   });
 
-  return { star, filterButton, afterMatches, renderFavToday, renderLedger, slipExtras, onLive, isFav };
+  function resetMatchView() { onlyFavs=false; }
+  return { resetMatchView, star, filterButton, afterMatches, renderFavToday, renderLedger, slipExtras, onLive, isFav };
 })();

@@ -14,7 +14,9 @@ if (!$("#bulletinDays")) {
 }
 const bulletinToday = () => new Date().toLocaleDateString("sv-SE", {timeZone:"Europe/Istanbul"});
 const matchFilters = {high:false, live:false};
-const state = {league:null, bulletinCategory:"all", bulletinDay:bulletinToday(), bulletinReq:0,
+const requestedDay=new URLSearchParams(location.search).get('day');
+const initialDay=requestedDay && /^\d{4}-\d{2}-\d{2}$/.test(requestedDay) && Number.isFinite(Date.parse(requestedDay)) ? requestedDay : bulletinToday();
+const state = {league:null, bulletinCategory:"all", bulletinDay:initialDay, bulletinReq:0,
   tab:"matches", leagues:[], couponDate:bulletinToday(), couponReq:0, matchReq:0, live:new Map()};
 
 function selectionResult(market, h, a, state) {
@@ -135,17 +137,21 @@ function matchCard(m) {
   </div>`;
 }
 
-function resetMatchFilters() { matchFilters.high=false; matchFilters.live=false; }
-function setBulletinDay(day) { resetMatchFilters(); state.bulletinDay=day; renderMatches(); }
+function resetMatchFilters() { matchFilters.high=false; matchFilters.live=false; window.Extras?.resetMatchView?.(); }
+function setBulletinDay(day) {
+  resetMatchFilters(); state.bulletinDay=day;
+  const url=new URL(location.href); url.searchParams.set('day',day); history.replaceState(null,'',url);
+  renderMatches();
+}
 function shiftBulletinDay(amount) {
   const day = new Date(state.bulletinDay+"T12:00:00Z"); day.setUTCDate(day.getUTCDate()+amount);
   setBulletinDay(day.toISOString().slice(0,10));
 }
 function renderBulletinDays() {
-  const quick = [0,1,2].map((offset)=>{
+  const quick = [-2,-1,0,1,2].map((offset)=>{
     const day=new Date(bulletinToday()+"T12:00:00Z"); day.setUTCDate(day.getUTCDate()+offset);
     const value=day.toISOString().slice(0,10);
-    return `<button class="chip${value === state.bulletinDay ? " active" : ""}" aria-pressed="${value === state.bulletinDay}" data-bulletin-day="${value}">${["Bugün","Yarın","Ertesi gün"][offset]}</button>`;
+    return `<button class="chip${value === state.bulletinDay ? " active" : ""}" aria-pressed="${value === state.bulletinDay}" data-bulletin-day="${value}">${["Evvelsi gün","Dün","Bugün","Yarın","Ertesi gün"][offset+2]}</button>`;
   }).join("");
   $("#bulletinDays").innerHTML=`<h2 class="sr-only">${state.bulletinCategory === "other" ? "Diğer ligler" : "Günün bülteni"}</h2><div class="bulletin-days"><button class="btn" data-bulletin-shift="-1" aria-label="Önceki gün">‹</button>${quick}<label>Gün <input type="date" id="bulletinDate" value="${state.bulletinDay}"></label><button class="btn" data-bulletin-shift="1" aria-label="Sonraki gün">›</button></div>`;
 }
