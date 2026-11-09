@@ -31,3 +31,14 @@ Başlama saati geçmesi bitiş skoru icat etmez.
 9. Ölçüm: aynı kohort, kapsama, isabet, olasılık kalitesi ve getiri raporu gerekiyor.
 
 Kullanıcı verileri ve kişisel kuponlara dokunulmayacak. Test edilmiş PR hazırlanacak; açık onay olmadan merge yapılmayacak.
+
+## İkinci aşama
+
+- Küçük liglerde tam 1X2 önkoşulu kaldırıldı; seçilen pazarın tamamlanmış devig grubu ve gerçek fiyatı gerekiyor.
+- Piyasa temelli küçük lig kuponunda 2–4 farklı maçtan alternatifler eklendi. Sağlayıcı minimum maç sayısı korunur; örneklem bazında aynı maç tekrarlanmaz ve alt/üst küme kuponlar elenir.
+- Kombinasyon hesaplaması minimum maç şartı gruplarında sınırlı güçlü aday sınırıyla yapılır. 500 maçlık regresyon verisi hesaplamaya sınırlı aday girdiğini doğrular.
+- Alternatifler arayüz ve paylaşımda ayrı ayrı erişilebilir; eski tek-kupon API alanı korunur. Bu kuponlar açıkça piyasa verili olarak adlandırılır.
+- Canlı ESPN skor okuyucusu, eksik skorları varsayılan 0–0 yapıyordu. Eksik/bozuk skorlar artık bilinmiyor sayılır; sağlayıcının sayısal skor nesneleri desteklenir.
+- İlgili Python testleri: 45 geçti. Alternatif kupon arayüzü: 10 JavaScript testi geçti. Nihai tüm testler henüz çalıştırılmadı.
+
+Kapsam araştırması: ESPN esp.2 resmi scoreboard kaynağı 9 Kasım için iki maç veriyor. Bu maçlar mevcut uygulamada küçük lig olarak geçen İspanya ikinci lig karşılaşmalarıyla eşleştirilecek; doğrulanmamış organizasyon kimliğiyle otomatik model açılmayacak.

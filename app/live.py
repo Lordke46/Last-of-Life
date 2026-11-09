@@ -20,6 +20,10 @@ def _parse_event(event, league):
     away = next((x for x in competitors if x.get("homeAway") == "away"), None)
     if not home or not away:
         return None
+    from .scrapers.espn import _goals
+    home_score, away_score = _goals(home.get('score')), _goals(away.get('score'))
+    if home_score is None or away_score is None or min(home_score,away_score)<0:
+        return None  # Missing scores are unknown, never a fabricated 0–0.
     status = event.get("status", {})
     typ = status.get("type", {})
     state = typ.get("state")
@@ -32,7 +36,7 @@ def _parse_event(event, league):
         "id": str(event.get("id")), "league": league,
         "home": home.get("team", {}).get("displayName", ""),
         "away": away.get("team", {}).get("displayName", ""),
-        "home_goals": int(home.get("score") or 0), "away_goals": int(away.get("score") or 0),
+        "home_goals": home_score, "away_goals": away_score,
         "minute": minute, "period": period, "state": state,
     }
 

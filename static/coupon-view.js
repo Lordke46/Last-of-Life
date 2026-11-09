@@ -65,7 +65,7 @@
   function alternatives(data, type) {
     if (!data || typeof data !== "object") return [];
     if (Array.isArray(data[`current_${type}_alternatives`]) && (!data.date || data.date >= new Date().toLocaleDateString("sv-SE",{timeZone:"Europe/Istanbul"}))) return data[`current_${type}_alternatives`];
-    const key = `${type}_alternatives`;
+    const key = type === "small_leagues" ? "small_league_alternatives" : `${type}_alternatives`;
     const listed = Array.isArray(data[key])
       ? data[key].filter((coupon) => coupon && typeof coupon === "object" && Array.isArray(coupon.picks) && coupon.picks.length)
       : [];
@@ -75,7 +75,7 @@
   }
 
   function emptyReason(data, type) {
-    const label = type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
+    const label = type === "small_leagues" ? "Piyasa verili küçük ligler" : type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
     const diag = data && typeof data === "object" ? data[`${type}_diagnostics`] || {} : {};
     const lines = [];
     if (diag.stale_odds) {
@@ -97,7 +97,7 @@
   }
 
   function couponGroup(data, type, badgeClass, date) {
-    const label = type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
+    const label = type === "small_leagues" ? "Piyasa verili küçük ligler" : type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
     const coupons = alternatives(data, type);
     const content = coupons.length
       ? coupons.map((coupon, index) => couponCard(coupon, `${label} Kuponu ${index + 1}`, badgeClass, { kind: type, index, date })).join("")

@@ -12,7 +12,8 @@ from app.main import coupons as coupons_endpoint, picks as picks_endpoint
 from app.model import coupons as cp
 from app.model.coupons import (_choices, _coupon, select_banko, select_banko_alternatives,
                                select_surprise, select_surprise_alternatives, select_small_league,
-                               small_league_recommendation)
+                               select_small_league_alternatives, small_league_recommendation)
+from app.model.small_leagues import bulletin_event
 
 
 def pred(mid, markets, kickoff=None, league="eng.1"):
@@ -228,6 +229,59 @@ class CouponAlternativesTest(unittest.TestCase):
 
 
 class SmallLeagueCouponTest(unittest.TestCase):
+    def market_entry(self, mid, odds, *, min_matches=None, provenance=None):
+        p = bulletin_event({"id": str(mid), "league": "small:test:league", "kickoff":
+                            (datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
+                            "home": f"H{mid}", "away": f"A{mid}", "iddaa_odds": odds,
+                            "iddaa_updated_at": datetime.now(timezone.utc).isoformat(),
+                            "quote_provenance": provenance})
+        p["small_league"] = True
+        p["iddaa_min_matches"] = min_matches or {}
+        return p, _choices(p, odds)
+
+    def test_small_choice_can_use_complete_ou_without_1x2(self):
+        prediction, choices = self.market_entry(1, {"Ü1.5": 1.75, "A1.5": 2.1})
+        self.assertEqual([c["market"] for c in choices], ["Ü1.5", "A1.5"])
+        self.assertEqual(small_league_recommendation(prediction, choices)["market"], "Ü1.5")
+
+    def test_small_coupon_alternatives_are_distinct_and_rank_probability_then_size(self):
+        entries = [self.market_entry(i, {"Ü1.5": 1.75, "A1.5": 2.1}) for i in range(1, 5)]
+        # Duplicate fixture rows cannot inflate alternatives or repeat a match.
+        entries.append(entries[0])
+        alternatives = select_small_league_alternatives(entries, limit=3)
+        self.assertEqual(len(alternatives), 3)
+        signatures = [frozenset(p["id"] for p in picks) for picks in alternatives]
+        self.assertEqual(len(set(signatures)), 3)
+        self.assertTrue(all(2 <= len(picks) <= 4 for picks in alternatives))
+        self.assertTrue(all(p["probability_source"] == "iddaa_market" and p["confidence"] is None
+                            for picks in alternatives for p in picks))
+        self.assertEqual(select_small_league(entries), alternatives[0])
+
+    def test_small_alternatives_honor_per_choice_min_matches(self):
+        entries = [self.market_entry(i, {"Ü1.5": 1.75, "A1.5": 2.1},
+                                     min_matches={"Ü1.5": 3, "A1.5": 1}) for i in range(1, 4)]
+        alternatives = select_small_league_alternatives(entries, limit=10)
+        self.assertTrue(alternatives)
+        self.assertTrue(all(len(picks) >= 3 for picks in alternatives))
+
+    def test_large_small_league_pool_uses_bounded_combination_frontier(self):
+        entries = [self.market_entry(i, {"Ü1.5": 1.75, "A1.5": 2.1}) for i in range(1, 501)]
+        original = cp.combinations
+        with patch.object(cp, "combinations", wraps=original) as combinations_spy:
+            alternatives = select_small_league_alternatives(entries, limit=3)
+        self.assertEqual(len(alternatives), 3)
+        # The single default min_matches bucket is capped at max(4, limit + 3),
+        # regardless of the 500-event input.
+        frontier_sizes = [len(call.args[0]) for call in combinations_spy.call_args_list]
+        self.assertTrue(frontier_sizes)
+        self.assertLessEqual(max(frontier_sizes), 6)
+
+    def test_stale_small_quotes_are_not_selected(self):
+        stale = {"last_fetch_status": "failed", "quotes": {"Ü1.5": {}}}
+        entries = [self.market_entry(i, {"Ü1.5": 1.75, "A1.5": 2.1}, provenance=stale)
+                   for i in range(1, 4)]
+        self.assertEqual(select_small_league_alternatives(entries), [])
+
     def test_small_leagues_are_excluded_from_existing_coupons(self):
         entries = [entry(1, {"1": (0.90, 1.3)}), entry(2, {"1": (0.90, 1.3)}),
                    entry(3, {"X": (0.3, 3.5)}), entry(4, {"X": (0.3, 3.5)}), entry(5, {"X": (0.3, 3.5)})]
@@ -270,14 +324,12 @@ class SmallLeagueCouponTest(unittest.TestCase):
     def test_small_coupon_has_two_to_four_market_candidates_without_model_confidence(self):
         entries = []
         for i in range(1, 6):
-            p = pred(i, {"1": (0.66, 1.5), "1X": (0.82, 1.2)}, league=f"small:country:league")
-            p["small_league"] = True
+            p, choices = self.market_entry(i, {"1": 1.55, "X": 4.0, "2": 5.0})
             p["league_name"] = "Premier League"
-            p["data_availability"] = {"market_probabilities": True}
-            entries.append((p, _choices(p, {"1": 1.55, "X": 4.0, "2": 5.0})))
+            entries.append((p, choices))
         with patch.object(cp, "LEAGUES", {}):
             picks = select_small_league(entries)
-        self.assertEqual(len(picks), 4)
+        self.assertEqual(len(picks), 2)  # higher joint hit probability; fewer matches wins ties
         self.assertTrue(all(p["small_league"] and p["confidence"] is None for p in picks))
 
 

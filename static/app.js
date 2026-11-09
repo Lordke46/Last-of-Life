@@ -201,11 +201,11 @@ async function renderCoupons() {
   el.innerHTML = `<p class="muted">${esc(dateText)} · ana ligler: ${matches} maç</p>` +
     CouponView.couponGroup(data, "banko", "b-good", data.date) +
     CouponView.couponGroup(data, "surprise", "b-warn", data.date) +
-    CouponView.couponCard(data.small_leagues, "Küçük Ligler Kuponu", "b-warn", { kind: "small_leagues", index: 0, date: data.date }) +
+    CouponView.couponGroup(data, "small_leagues", "b-info", data.date) +
     (["banko","surprise"].some((key)=>data[key]?.publication === "published") ? detail("Günün önceki yayımlanmış kuponları", ["banko","surprise"].map((key)=>data[key]?.publication === "published" ? CouponView.couponCard(data[key],key === "banko" ? "Yayımlanmış Banko" : "Yayımlanmış Sürpriz","b-info") : "").join("")) : "");
   el.querySelectorAll("[data-share-coupon]").forEach((button) => button.addEventListener("click", () => {
     const type = button.dataset.shareType, index = Number(button.dataset.shareIndex) || 0;
-    const coupon = type === "small_leagues" ? data.small_leagues : CouponView.alternatives(data, type)[index];
+    const coupon = CouponView.alternatives(data, type)[index];
     if (coupon?.picks?.length) window.CouponShare?.share({ title: button.closest(".coupon-card").querySelector("h3").textContent, date: data.date, picks: coupon.picks, totalOdds: coupon.total_odds }, button.parentElement.querySelector("[data-share-size]").value);
   }));
 }

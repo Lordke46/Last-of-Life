@@ -6,6 +6,7 @@ model fiyatını ayrı kaynak etiketiyle koruyabilir; bunlar otomatik kupona al�
 Gün sınırı Türkiye saatidir (arayüzdeki saatler de yerel gösterilir).
 """
 import math
+import heapq
 from datetime import date, datetime, timezone, timedelta
 from itertools import combinations, product
 from zoneinfo import ZoneInfo
@@ -77,8 +78,6 @@ def _choices(prediction: dict, iddaa_odds: dict) -> list[dict]:
     out = []
     if iddaa_odds and not _odds_fresh(prediction):
         return out  # bayat/kimliği belirsiz fiyatla otomatik kupon yok
-    if prediction.get("small_league") and devig([iddaa_odds.get(k) for k in ("1", "X", "2")]) is None:
-        return out
     available = {**prediction.get("markets", {}), **prediction.get("extra_markets", {})}
     for market, item in available.items():
         if market not in SUPPORTED_MARKETS:
@@ -88,7 +87,10 @@ def _choices(prediction: dict, iddaa_odds: dict) -> list[dict]:
         claude = item.get("suggested")
         theirs = iddaa_odds.get(market)
         if prediction.get("small_league"):
-            if not prediction.get("data_availability", {}).get("market_probabilities") or not theirs or theirs < 1.01:
+            # Small-league probabilities must come from a complete devigged group
+            # in small_leagues.bulletin_event, and the selected market needs its own quote.
+            if (not prediction.get("data_availability", {}).get("market_probabilities")
+                    or item.get("market_p") is None or not theirs or theirs < 1.01):
                 continue
         elif not claude or claude < 1.01:
             continue
@@ -283,21 +285,63 @@ def _day_entries(target: date) -> list[tuple[dict, list[dict]]]:
 
 
 def select_small_league(entries: list[tuple[dict, list[dict]]]) -> list[dict]:
-    """Küçük liglerde 2-4 en olası ayrı maç; oranla tahmini harmanla ve güveni düşük tut."""
+    """Primary market-only coupon, retained for existing callers."""
+    return next(iter(select_small_league_alternatives(entries, limit=1)), [])
+
+
+def select_small_league_alternatives(entries: list[tuple[dict, list[dict]]], limit=3) -> list[list[dict]]:
+    """Distinct small-league market-only coupons, ranked by combined market probability."""
     best = []
+    seen_matches = set()
     for prediction, choices in entries:
         if not prediction.get("small_league") or not prediction.get("data_availability", {}).get("market_probabilities"):
+            continue
+        mid = str(prediction.get("id", ""))
+        if not mid or mid in seen_matches:
             continue
         choice = small_league_recommendation(prediction, choices)
         if choice:
             best.append((prediction, choice))
-    best.sort(key=lambda item: (-item[1]["p"], item[0]["kickoff"]))
-    picks = []
-    for prediction, choice in best[:4]:
-        pick = _match_view(prediction, choice)
-        pick.update({"confidence": None, "confidence_label":"Model güveni yok", "small_league": True})
-        picks.append(pick)
-    return picks if len(picks) >= max([2]+[p.get('min_matches',1) for p in picks]) else []
+            seen_matches.add(mid)
+
+    # Bound combinatorics independently of bulletin size. Keeping the strongest
+    # few candidates in each min_matches bucket preserves options with distinct
+    # eligibility constraints while avoiding O(n^4) generation on busy days.
+    frontier_per_bucket = max(4, max(0, limit) + 3)
+    buckets = {}
+    for item in best:
+        required = max(1, int(item[1].get("min_matches", 1) or 1))
+        if required <= 4:
+            buckets.setdefault(required, []).append(item)
+    frontier = []
+    for items in buckets.values():
+        items.sort(key=lambda item: (-item[1]["p"], str(item[0].get("id", ""))))
+        frontier.extend(items[:frontier_per_bucket])
+
+    ranked = heapq.nlargest(max(0, limit) * 8, (
+        (math.prod(choice["p"] for _, choice in combo), size,
+         tuple(str(prediction.get("id", "")) for prediction, _ in combo), combo)
+        for size in range(2, min(4, len(frontier)) + 1)
+        for combo in combinations(frontier, size)
+        if size >= max(int(choice.get("min_matches", 1) or 1) for _, choice in combo)
+    ), key=lambda item: (item[0], -item[1], tuple(reversed(item[2]))))
+
+    out, used = [], []
+    for _, _, ids, combo in ranked:
+        signature = frozenset(ids)
+        if any(signature <= previous or previous <= signature for previous in used):
+            continue
+        picks = []
+        for prediction, choice in sorted(combo, key=lambda item: item[0]["kickoff"]):
+            pick = _match_view(prediction, choice)
+            pick.update({"confidence": None, "confidence_label": "Model güveni yok",
+                         "small_league": True, "probability_source": "iddaa_market"})
+            picks.append(pick)
+        out.append(picks)
+        used.append(signature)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def build_coupons(target: date) -> dict:
@@ -327,12 +371,17 @@ def build_coupons(target: date) -> dict:
     for event in grouped.values():
         p = _small_prediction_for_coupon(event)
         small_entries.append((p, _choices(p, p["iddaa_odds"])))
-    small_picks = select_small_league(small_entries)
+    small_alternatives = select_small_league_alternatives(small_entries)
+    small_picks = small_alternatives[0] if small_alternatives else []
     small_coupon = _coupon("small", small_picks,
         "Bu kupon iddaa piyasa olasılıklarına dayanır; takım modeli güveni hesaplanmaz.")
     for pick in small_coupon["picks"]:
         pick["league_name"] = grouped[pick["id"]]["league_name"]
         pick["country"] = grouped[pick["id"]]["country"]
+    for coupon in small_alternatives:
+        for pick in coupon:
+            pick["league_name"] = grouped[pick["id"]]["league_name"]
+            pick["country"] = grouped[pick["id"]]["country"]
     banko_note = "İsabet öncelikli: gerçek oran 1,15–2,30; tek seçim tahmini olasılığı en az %70; kupon toplamı en az %50; en az 12 ağırlıklı maç verisi; 2–3 farklı maç. Kalibrasyon varsa uygulanır, eksikliği belirtilir. Toplam olasılık maçların bağımsızlığı varsayımıyla hesaplanır; Banko garanti değildir."
     surprise_note = "Sürpriz: gerçek oran 1,80–3,50; olasılık %38–70; 3–4 farklı maç; toplam oran 8–25. Daha yüksek risk taşır."
     banko_diagnostics = {}
@@ -352,6 +401,9 @@ def build_coupons(target: date) -> dict:
         "surprise_diagnostics": surprise_diagnostics,
         "surprise_alternatives": surprise_alternatives,
         "small_leagues": small_coupon,
+        "small_league_alternatives": [_coupon("small", picks,
+            "Bu kupon iddaa piyasa olasılıklarına dayanır; takım modeli güveni hesaplanmaz.")
+            for picks in small_alternatives],
         "rules": {"banko_min_probability": BANKO_MIN_P, "banko_min_total_probability": BANKO_MIN_TOTAL_P,
                   "banko_min_edge": BANKO_MIN_EDGE, "banko_min_data_n": BANKO_MIN_DATA_N,
                   "banko_min_calibration_samples": calibration.MIN_SAMPLES,
