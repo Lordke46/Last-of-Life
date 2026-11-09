@@ -62,6 +62,27 @@ class PerformanceTests(unittest.TestCase):
         summary = self.result()["summary"]
         self.assertEqual(summary["n"], 1)
 
+    def test_void_and_not_yet_available_results_do_not_inflate_performance(self):
+        self.add('valid');self.add('void');self.add('early')
+        with db.session() as conn:
+            conn.execute("UPDATE matches SET status='Cancelled' WHERE id='void'")
+            conn.execute("UPDATE matches SET kickoff=? WHERE id='early'",((NOW-timedelta(hours=1)).isoformat(),))
+            self.assertEqual(performance.report(conn,NOW)['summary']['n'],1)
+
+    def test_strongest_option_is_scored_separately_without_replacing_primary(self):
+        self.add('a')
+        with db.session() as conn:
+            row=conn.execute("SELECT payload FROM prediction_snapshots WHERE match_id='a'").fetchone()
+            payload=json.loads(row['payload'])
+            payload['strongest_pick']={'market':'Ü1.5','p':.80,'odds':1.2,'odds_source':'iddaa'}
+            payload['odds']['Ü1.5']=1.2
+            conn.execute("UPDATE prediction_snapshots SET payload=? WHERE match_id='a'",(json.dumps(payload),))
+            primary=performance.report(conn,NOW)
+            strongest=performance.report(conn,NOW,pick_field='strongest_pick')
+        self.assertEqual(primary['summary']['predicted_rate'],.75)
+        self.assertEqual(strongest['summary']['predicted_rate'],.80)
+        self.assertEqual(strongest['summary']['won'],1)
+
     def closing(self, mid, quote, at):
         with db.session() as conn:
             conn.execute("INSERT INTO odds_log(match_id,market,odd,first_odd,first_seen,updated_at) VALUES(?, '1', ?, ?, ?, ?)",

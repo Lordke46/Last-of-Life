@@ -47,9 +47,21 @@ def apply(prediction, now=None):
         if market not in P.PICK_MARKETS:continue
         why = reasons(prediction,market,now)
         if why:rejected[market]=why
-        else:eligible[market]=item
+        else:
+            calib=(prediction.get('calibration_by_market') or {}).get(market) or {}
+            eligible[market]=({**item,**P.odds(calib['p']),'raw_p':item['p'],
+                              'calibration_applied':True,'calibration_scope':calib.get('scope','league'),
+                              'calibration_n':calib.get('n',0)} if calib.get('applied') else dict(item))
     pick = P.best_pick(eligible, actual_odds=prediction.get('iddaa_odds',{}))
     out['pick'] = pick
+    strongest=P.best_pick(eligible,min_odds=1.15,actual_odds=prediction.get('iddaa_odds',{}))
+    if strongest:
+        strongest={**strongest,'estimated_edge':round(strongest['p']*strongest['odds']-1,4),'policy':'highest_probability_v1',**P.confidence(strongest['p'],prediction.get('data_n',0),data_integrity=prediction.get('data_integrity'))}
+        if not strongest.get('calibration_applied'):
+            strongest['confidence']=min(strongest['confidence'],.69)
+            strongest['confidence_label']=P.confidence_label(strongest['confidence'])
+            strongest['confidence_reason']+='; ileriye dönük kalibrasyon kanıtı yetersiz'
+    out['strongest_pick']=strongest
     out['decision'] = {'status':'bet_candidate' if pick else 'no_bet', 'policy':P.PICK_POLICY,
                        'review_threshold_pp':MODEL.get('disagreement_review_pp',20),
                        'rejected_markets':rejected,

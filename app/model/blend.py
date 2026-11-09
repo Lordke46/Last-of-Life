@@ -54,21 +54,22 @@ def _clamp(weight) -> float:
     return min(1.0, max(0.0, float(weight)))
 
 
-def blend_markets(model_markets: dict, iddaa_odds: dict, weight: float | None = None):
+def blend_markets(model_markets: dict, iddaa_odds: dict, weight: float | None = None, group_weights=None):
     """(harmanlı pazarlar, harmanlanan grup adları). Her pazar: model `p`/`fair`/`suggested` alanları
     harmanlı olasılıktan yeniden hesaplanır; `model_p` ve `market_p` (piyasa yoksa None) eklenir.
     Hiçbir grup harmanlanmadıysa `model_markets` aynen döner."""
     w = _clamp(MODEL["market_weight"] if weight is None else weight)
-    groups = implied_groups(iddaa_odds) if w > 0 else {}
+    groups = implied_groups(iddaa_odds) if w > 0 or group_weights else {}
     if not groups:
         return model_markets, []
 
     model_p = {m: item["p"] for m, item in model_markets.items()}
     market_p = {m: q for g in groups.values() for m, q in g.items()}
     final = dict(model_p)
-    for markets in groups.values():
+    for name, markets in groups.items():
+        group_weight = _clamp((group_weights or {}).get(name,w))
         keys = list(markets)
-        for k, p in zip(keys, blend_probs([model_p[k] for k in keys], [markets[k] for k in keys], w)):
+        for k, p in zip(keys, blend_probs([model_p[k] for k in keys], [markets[k] for k in keys], group_weight)):
             final[k] = p
     if "1x2" in groups:
         p1, px, p2 = (final[k] for k in GROUPS["1x2"])
@@ -78,10 +79,20 @@ def blend_markets(model_markets: dict, iddaa_odds: dict, weight: float | None = 
         q1, qx, q2 = (market_p[k] for k in GROUPS["1x2"])
         market_p.update({"1X": q1 + qx, "12": q1 + q2, "X2": qx + q2})
 
+    # Independently chosen weights/quotes must not imply P(4+ goals)>P(3+ goals).
+    totals = ('Ü1.5','Ü2.5','Ü3.5')
+    incoherent = all(k in final for k in totals) and any(final[a]+1e-6<final[b] for a,b in zip(totals,totals[1:]))
+    if incoherent:
+        for group in ('ou1.5','ou2.5','ou3.5'):
+            for key in GROUPS[group]:final[key]=model_p[key]
+            groups.pop(group,None)
     out = {}
     for m, item in model_markets.items():
         out[m] = ({**P.odds(final[m]), "model_p": model_p[m], "market_p": round(market_p[m], 4)}
                   if m in market_p else {**item, "model_p": model_p[m], "market_p": None})
+    if incoherent:
+        for key in ('Ü1.5','A1.5','Ü2.5','A2.5','Ü3.5','A3.5'):
+            out[key]['blend_rejected_reason']='incoherent_goal_thresholds'
     for m,item in out.items():
         group = next((name for name,keys in GROUPS.items() if m in keys and name in groups),None)
         if m in ('1X','12','X2') and '1x2' in groups:group='1x2'
@@ -90,11 +101,11 @@ def blend_markets(model_markets: dict, iddaa_odds: dict, weight: float | None = 
     return out, list(groups)
 
 
-def blend_prediction(pred: dict, iddaa_odds: dict, weight: float | None = None) -> dict:
+def blend_prediction(pred: dict, iddaa_odds: dict, weight: float | None = None, group_weights=None) -> dict:
     """Tek maç tahminini iddaa oranlarıyla harmanlar (yeni sözlük döner). Oran yoksa model aynen kalır;
     Gerçek oran varsa, harman grubu eksik olsa da öneri mevcut pazarlardan yeniden seçilir."""
     w = _clamp(MODEL["market_weight"] if weight is None else weight)
-    markets, groups = blend_markets(pred["markets"], iddaa_odds, w)
+    markets, groups = blend_markets(pred["markets"], iddaa_odds, w, group_weights)
     # Even at market_weight=0 the market benchmark remains auditable.
     benchmarks = implied_groups(iddaa_odds)
     markets = {k:dict(v) for k,v in markets.items()}
@@ -104,7 +115,7 @@ def blend_prediction(pred: dict, iddaa_odds: dict, weight: float | None = None) 
             item=markets[key]
             item.setdefault('model_p',pred['markets'][key]['p']);item['market_p']=round(q,4)
             item.update(decision_quality.comparison(item,group=group,book=sum(1/iddaa_odds[k] for k in GROUPS[group])))
-    out = {**pred, "markets": markets, "blend": {"applied": bool(groups), "weight": w, "groups": groups}}
+    out = {**pred, "markets": markets, "blend": {"applied": bool(groups), "weight": w, "groups": groups, "group_weights":group_weights or {}}}
     if "pick" in pred:
         out["pick"] = P.best_pick(markets, actual_odds=iddaa_odds)
         out["alternative"] = None if out['pick'] else P.candidate(markets,iddaa_odds) if iddaa_odds else P.model_preview(markets)
@@ -120,7 +131,7 @@ def calibration_stats(conn):
     from . import calibration
     conn.execute('SAVEPOINT decision_calibration')
     try:
-        observed = calibration.load(conn)
+        observed = calibration.load(conn,include_market_weights=True)
         conn.execute('RELEASE SAVEPOINT decision_calibration')
     except Exception:
         conn.execute('ROLLBACK TO SAVEPOINT decision_calibration')
@@ -132,11 +143,20 @@ def calibration_stats(conn):
 def assess_prediction(prediction, observed):
     from . import calibration
     out=dict(prediction)
-    out['calibration_by_market']={k:calibration.calibrate(v['p'],out.get('league',''),k,observed)
+    from . import adaptive_market
+    evidence=adaptive_market.for_prediction(out,observed.get(adaptive_market.KEY,{}))
+    if evidence:
+        raw={k:P.odds(v.get('model_p',v['p'])) for k,v in out.get('markets',{}).items()}
+        out=blend_prediction({**out,'markets':raw},out.get('iddaa_odds',{}),
+                             group_weights={g:e['weight'] for g,e in evidence.items()})
+        out['blend']['selection_evidence']=evidence
+    family='fitted' if (out.get('ensemble') or {}).get('fitted_weight',0) else 'legacy'
+    out['calibration_by_market']={k:calibration.calibrate(v['p'],out.get('league',''),k,observed,family=family)
         for k,v in out.get('markets',{}).items() if isinstance(v.get('p'),(int,float))}
     out=decision_quality.apply(out)
-    if out.get('pick'):
-        out['pick']['min_matches']=out.get('iddaa_min_matches',{}).get(out['pick']['market'],1)
+    for field in ('pick','strongest_pick'):
+        if out.get(field):
+            out[field]['min_matches']=out.get('iddaa_min_matches',{}).get(out[field]['market'],1)
     return out
 
 

@@ -77,11 +77,17 @@ def coupon_summary(conn) -> dict:
 
 def build(min_history: int = 120) -> dict:
     leagues, everything = [], []
+    ensemble_audit = {}
     for lg, cfg in LEAGUES.items():
         if is_cup(lg):
             continue
         with session() as conn:
             done, _ = _load(conn, lg)
+        from .ensemble import prepare, save_selection, code_signature
+        _, selection = prepare(LeagueModel(lg,done,[],{}),datetime.now(timezone.utc))
+        ensemble_audit[lg] = selection
+        with session() as conn:
+            save_selection(conn,lg,selection)
         samples = league_samples(done, min_history)
         if samples:
             leagues.append({"league": lg, "name": cfg.get("name", lg), **metrics(samples)})
@@ -103,7 +109,7 @@ def build(min_history: int = 120) -> dict:
             calibration_audit = calibration_model.report(calibration_model.load(conn))
         except Exception:
             calibration_audit = {"available": False}
-    return {"prospective": prospective, "banko_calibration": calibration_audit,
+    return {"prospective": prospective, "banko_calibration": calibration_audit, "ensemble_selection":ensemble_audit, "ensemble_code":code_signature(),
             "computed_at": datetime.now(timezone.utc).isoformat(), "overall": metrics(everything),
             "leagues": sorted(leagues, key=lambda r: -r["n"]), "calibration": calibration(everything),
             "trend": trend(everything), "coupons": coupons}
@@ -113,6 +119,9 @@ def refresh() -> dict:
     report = build()
     with session() as conn:
         set_meta(conn, META_KEY, json.dumps(report))
+        set_meta(conn,"ensemble_updated_at",report["computed_at"])
+    from .engine import invalidate
+    invalidate()
     return report
 
 
@@ -124,7 +133,8 @@ def cached() -> dict | None:
 
 def is_fresh(max_age_hours: float = MAX_AGE_HOURS) -> bool:
     r = cached()
-    if not r or not r.get("computed_at"):
+    from .ensemble import code_signature
+    if not r or not r.get("computed_at") or r.get("ensemble_code")!=code_signature():
         return False
     return datetime.now(timezone.utc) - datetime.fromisoformat(r["computed_at"]) < timedelta(hours=max_age_hours)
 

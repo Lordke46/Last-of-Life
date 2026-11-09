@@ -83,9 +83,9 @@
       const when = Number.isFinite(age) ? `Oranlar ${Math.trunc(age)} dk önce alındı. ` : "";
       lines.push(`${when}Canlı kupon kapalı: iddaa fiyatı 2 saatten eski (${diag.stale_odds} maç).`);
     }
-    if (type === "banko" && diag.selection_policy === "hit_rate_v3" && !diag.eligible_matches && !diag.stale_odds) {
-      lines.push("Henüz başlamamış maçlarda %62 olasılık, 1,40–2,30 gerçek oran ve yeterli takım verisi koşullarına uyan aday bulunamadı.");
-    } else if (type === "banko" && diag.selection_policy === "hit_rate_v3" && diag.eligible_matches) {
+    if (type === "banko" && ["hit_rate_v3", "hit_rate_v4"].includes(diag.selection_policy) && !diag.eligible_matches && !diag.stale_odds) {
+      lines.push(diag.selection_policy === "hit_rate_v4" ? "Henüz başlamamış maçlarda %70 olasılık, 1,15–2,30 gerçek oran ve yeterli takım verisi koşullarına uyan aday bulunamadı." : "Henüz başlamamış maçlarda %62 olasılık, 1,40–2,30 gerçek oran ve yeterli takım verisi koşullarına uyan aday bulunamadı.");
+    } else if (type === "banko" && ["hit_rate_v3", "hit_rate_v4"].includes(diag.selection_policy) && diag.eligible_matches) {
       lines.push(`${diag.eligible_matches} aday var; farklı maç sayısı, toplam oran veya minimum bahis adedi koşullarında uygun kupon oluşmadı.`);
     } else if (type === "banko" && diag.calibration_insufficient) {
       const best = Number.isFinite(Number(diag.calibration_best_n)) ? Math.trunc(Number(diag.calibration_best_n)) : 0;

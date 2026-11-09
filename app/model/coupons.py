@@ -23,8 +23,8 @@ from ..scrapers.iddaa import load_constraints
 TZ = ZoneInfo("Europe/Istanbul")
 LOOKAHEAD_DAYS = 60
 
-BANKO_MIN_P, BANKO_MIN_ODDS, BANKO_MAX_ODDS = .62, 1.40, 2.30
-BANKO_MIN_TOTAL_P = .25
+BANKO_MIN_P, BANKO_MIN_ODDS, BANKO_MAX_ODDS = .70, 1.15, 2.30
+BANKO_MIN_TOTAL_P = .50
 BANKO_MIN_EDGE = None  # İsabet önceliğinde pozitif beklenen değer bir eleme koşulu değildir.
 BANKO_MIN_DATA_N = 12
 BANKO_PICKS, BANKO_POOL, BANKO_ALTERNATIVES = (2, 3), 14, 3
@@ -33,7 +33,7 @@ SURPRISE_MIN_ODDS, SURPRISE_MAX_ODDS = 1.80, 3.50
 SURPRISE_MIN_TOTAL_ODDS, SURPRISE_MAX_TOTAL_ODDS = 8.0, 25.0
 SURPRISE_PICKS, SURPRISE_POOL, SURPRISE_ALTERNATIVES = (3, 4), 14, 3
 SURPRISE_MARKETS = SUPPORTED_MARKETS
-SELECTION_POLICY = 'hit_rate_v3'
+SELECTION_POLICY = 'hit_rate_v4'
 
 MAX_COUPON_ODDS_AGE = timedelta(hours=2)
 
@@ -146,6 +146,7 @@ def _coupon(kind: str, picks: list[dict], note: str) -> dict:
             "picks": picks, "stake_note": note, "odds_source": source,
             "iddaa_picks": sum(p["odds_source"] == "iddaa" for p in picks),
             "total_odds": round(math.prod(p["odds"] for p in picks), 2) if picks else 0,
+            "probability_assumption":"independent_matches_not_a_guarantee",
             "total_probability": round(math.prod(p["p"] for p in picks), 4) if picks else 0}
 
 
@@ -227,7 +228,7 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
                     continue
                 probability = math.prod(c['p'] for _,c in combo)
                 total = math.prod(c['odds'] for _,c in combo)
-                if banko and (probability < BANKO_MIN_TOTAL_P or not 1.9 <= total <= 8):
+                if banko and (probability < BANKO_MIN_TOTAL_P or not 1.30 <= total <= 8):
                     counts["combinations_rejected"] += 1
                     continue
                 if not banko and (probability < .04 or not SURPRISE_MIN_TOTAL_ODDS <= total <= SURPRISE_MAX_TOTAL_ODDS):
@@ -278,22 +279,6 @@ def _day_entries(target: date) -> list[tuple[dict, list[dict]]]:
                 predictions.append(p)
     with session() as conn:
         predictions = blend_predictions(conn, predictions)  # olasılıklar iddaa ile harmanlı
-        # Eksik/bozuk snapshot tablosu PostgreSQL işlemini abort etmesin;
-        # önceki snapshot yazımlarını koruyarak yalnız kalibrasyonu atla.
-        conn.execute("SAVEPOINT calibration_read")
-        try:
-            observed = calibration.load(conn)
-            conn.execute("RELEASE SAVEPOINT calibration_read")
-        except Exception:
-            conn.execute("ROLLBACK TO SAVEPOINT calibration_read")
-            conn.execute("RELEASE SAVEPOINT calibration_read")
-            observed = {}
-    for prediction in predictions:
-        prediction["calibration_by_market"] = {
-            market: calibration.calibrate(item["p"], prediction["league"], market, observed)
-            for market, item in prediction.get("markets", {}).items()
-            if isinstance(item.get("p"), (int, float))
-        }
     return [(p, _choices(p, p["iddaa_odds"])) for p in predictions]
 
 
@@ -348,7 +333,7 @@ def build_coupons(target: date) -> dict:
     for pick in small_coupon["picks"]:
         pick["league_name"] = grouped[pick["id"]]["league_name"]
         pick["country"] = grouped[pick["id"]]["country"]
-    banko_note = "İsabet öncelikli: gerçek oran 1,40–2,30; tahmini olasılık en az %62; en az 12 ağırlıklı maç verisi; 2–3 farklı maç. Kalibrasyon varsa uygulanır, eksikliği belirtilir. Banko garanti değildir."
+    banko_note = "İsabet öncelikli: gerçek oran 1,15–2,30; tek seçim tahmini olasılığı en az %70; kupon toplamı en az %50; en az 12 ağırlıklı maç verisi; 2–3 farklı maç. Kalibrasyon varsa uygulanır, eksikliği belirtilir. Toplam olasılık maçların bağımsızlığı varsayımıyla hesaplanır; Banko garanti değildir."
     surprise_note = "Sürpriz: gerçek oran 1,80–3,50; olasılık %38–70; 3–4 farklı maç; toplam oran 8–25. Daha yüksek risk taşır."
     banko_diagnostics = {}
     banko_alternatives = [_coupon("banko", picks, banko_note)

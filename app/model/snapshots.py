@@ -31,7 +31,7 @@ def code_version():
     digest = hashlib.sha256()
     for name in ('config.py', 'news_intel.py', 'model/engine.py', 'model/ratings.py', 'model/predict.py',
                  'model/european.py', 'model/blend.py', 'model/extra_markets.py', 'model/decision_quality.py',
-                 'model/calibration.py', 'quote_provenance.py'):
+                 'model/calibration.py', 'model/fitted.py','model/ensemble.py','model/adaptive_market.py', 'quote_provenance.py'):
         digest.update((BASE_DIR / 'app' / name).read_bytes())
     return digest.hexdigest()[:16]
 
@@ -49,13 +49,13 @@ def record(conn, predictions):
         payload = {'model': {k: v.get('model_p', v.get('p')) for k, v in markets.items()},
                    'blend': {k: v.get('p') for k, v in markets.items()},
                    'market': {k: v.get('market_p') for k, v in markets.items()},
-                   'pick': p.get('pick'), 'confidence_label': p.get('confidence_label'),
+                   'pick': p.get('pick'), 'strongest_pick':p.get('strongest_pick'), 'confidence_label': p.get('confidence_label'),
                    'confidence': p.get('confidence'), 'confidence_scope': p.get('confidence_scope'),
                    'data_integrity': p.get('data_integrity'), 'sample_coverage': p.get('sample_coverage'),
                    'odds': p.get('iddaa_odds', {}), 'quote_provenance':p.get('quote_provenance'),
                    'decision':p.get('decision'),'calibration_status':p.get('calibration_status'), 'news': p.get('factors', {}).get('news'),
                    'no_news': p.get('no_news_markets'),
-                   'blend_settings': p.get('blend'), 'extra_markets': p.get('extra_markets', {})}
+                   'ensemble':p.get('ensemble'), 'blend_settings': p.get('blend'), 'extra_markets': p.get('extra_markets', {})}
         rows.append((str(p['id']), p['league'], p['kickoff'], at.isoformat(), version, data_version, parameters, json.dumps(payload)))
     conn.executemany('INSERT INTO prediction_snapshots(match_id,league,kickoff,captured_at,model_version,data_version,parameters,payload) '
                      'VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(match_id) DO NOTHING', rows)
@@ -176,6 +176,7 @@ def report(conn):
             band = score['bins'].setdefault(bucket,{'n':0,'predicted_sum':0.0,'won':0})
             band['n']+=1;band['predicted_sum']+=probability;band['won']+=int(won)
     return {'real_odds_picks': real_odds_performance(conn),
+            'strongest_picks': real_odds_performance(conn,pick_field='strongest_pick'),
             'scope': 'first_published_prematch', 'versions': sorted(versions),
             'variants': {v: {'metrics': metrics(s), 'calibration': calibration(s)} for v, s in samples.items()},
             'evaluation_status':'available' if any(v['n']>=30 for v in market_scores.values()) else 'insufficient_data',

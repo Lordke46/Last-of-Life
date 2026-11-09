@@ -289,8 +289,9 @@ async function openMatch(id, competitionId = null) {
   const f = m.factors, k = m.markets;
   const th = f.table.home, ta = f.table.away;
   const pk = m.pick || m.alternative, s = Simple.info(m);
+  const strongestHtml = Simple.strongestPickBlock(m);
   const hero = pk
-    ? `${Simple.pickBlock(m)}<div class="hero-foot">${Slip.button(m, pk.market)}</div>`
+    ? `<div class="hero-label">Dengeli öneri</div>${Simple.pickBlock(m)}<div class="hero-foot">${Slip.button(m, pk.market)}</div>${strongestHtml}`
     : `${Simple.pickBlock(m)}`;
 
   const rowFor = (key, hl) => `<tr${hl ? ' class="hl"' : ""}><td class="l"><b>${esc(Simple.headline(key))}</b> <span class="muted">${esc(marketText(key, m))}</span></td><td>${k[key] ? pct(k[key].p) : "-"}</td><td>${m.iddaa_odds?.[key] ?? "-"}${oddsMove(m, key)}</td><td>${Slip.button(m, key)}</td></tr>`;
