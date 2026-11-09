@@ -9,7 +9,7 @@ V3, #71 sonrasında kalan günlük seçim ve görünüm sorunlarını giderir. K
 - [x] Gerçek bültendeki bugün, yarın, dün ve evvelsi gün API+tarayıcıda doğrulanır. Eksik kaynak günü ile yazılım hatası ayrılır.
 - [x] Last of Life V3 ismi, tutarlı yeni ana sayfa/maç/kupon tasarımı, mobil düzen ve eski kişisel kuponlar korunur.
 - [x] Yeni günlük seçim davranışı gerçek veri kopyasında eski sürümle aynı gün ve havuzda karşılaştırılır; teorik olasılık ile gerçekleşmiş isabet ayrılır.
-- [ ] Regresyonlar ve bütünleşik akışlar geçer, incelenebilir PR hazırlanır. Kullanıcı açık onay vermeden merge yapılmaz.
+- [x] Regresyonlar ve bütünleşik akışlar geçer, incelenebilir PR hazırlanır. Kullanıcı açık onay vermeden merge yapılmaz.
 
 İlk canlı bulgu: 9 Kasım 2026 incelemesinde 7 Kasım için 746, 8 Kasım için 671, 9 Kasım için 64 maç API'de mevcut. Geçmiş veri yok varsayımı yanlıştır; görünüm/filtre/önbellek/yükleme akışı gerçek tarayıcıda doğrulandı.
 
@@ -31,3 +31,7 @@ GitHub saatlik hızlı işinin gerçek çalışmaları arasında saatlerce boşl
 Son çekim başarısız olsa bile önceden doğrulanmış fiyatın özgün iki saatlik süresi dolmadıysa kaynak uyarısıyla kullanılabilir. Zaman damgası değiştirilmez; iki saati aşmış veya önbellek kanıtı taşıyan fiyat güncel sayılmaz. Katalog zaman aşımı bilinen lig adlarını silmez.
 
 Takım geçmişi/güncelliği yetersiz ana liglerde, tam ve güncel fiyat grubu varsa açık piyasa olasılığına geçilir. Bu seçenek model güveni veya kalibrasyon kanıtı olarak gösterilmez. Dinlenme bağlamı açık geçmiş verilmediğinde tüm kulvarların maç öncesi kayıtlarını kapsar.
+
+## Kontroller ve teslim
+
+454 Python ve 87 JavaScript testi yerelde geçti. GitHub Tests çalışması 42635742249, Python 3.12 / Node 22 / Postgres 17 ile bütün test ve Postgres bütünleşme adımlarını başarıyla tamamladı. PR: https://github.com/Lordke46/Last-of-Life/pull/72. Merge yapılmadı.
