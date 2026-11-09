@@ -118,6 +118,12 @@ Grok'un güvenli secret'ı HTTP başlığına enjekte etmesi henüz test edilmed
   `lol_staging` ve ayrı test veritabanı oluşturuldu; migration'lar yalnız bu yerel
   DB'lere uygulandı. Production DB'ye bağlanılmadı. Cluster süreç ömrüne ve geçici
   dosya konumuna bağlıdır; Mac kapanırsa hizmete erişilemez.
+- **Mevcut geçici test cluster'ı yerel `trust` kimlik doğrulaması kullanır.**
+  Yalnız sahte test kimlikleri ve seçilmiş kamuya açık veriler içindir. Gerçek
+  servis sırrı eklenmeden veya HTTPS tüneli açılmadan önce staging PostgreSQL'in
+  yerel kimlik doğrulaması sıkılaştırılmalı, ayrı runtime/admin kimlik bilgileri
+  güvenli biçimde oluşturulmalı ve test hesapları gözden geçirilmelidir. Bu gerçek
+  sır oluşturma ve yapılandırma değişikliği ayrıca kullanıcı onayı gerektirir.
 - Sahte maç ve test kimliğiyle operatör kimlik kaydı/iş oluşturma ve schema, jobs,
   claim, context, renew, skill-results, reports akışı TestClient üzerinden 200;
   aynı sonucu yeniden gönderme `duplicate=true`. Test kimliği iptal edildi.
