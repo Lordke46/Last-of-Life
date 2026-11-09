@@ -32,7 +32,7 @@ def analyse(prediction, now=None):
     now = now or datetime.now(timezone.utc)
     kickoff = _ts(prediction.get('kickoff'))
     updated = _ts(prediction.get('iddaa_updated_at'))
-    fresh = quotes_fresh(prediction,now=now)
+    fresh = any(quotes_fresh(prediction,market,now) for market in prediction.get('markets',{}) if market in prediction.get('iddaa_odds',{}))
     actionable = bool(fresh and kickoff and kickoff > now and prediction.get('odds_current') is not False)
     small = bool(prediction.get('small_league'))
     n = prediction.get('data_n')
@@ -51,7 +51,9 @@ def analyse(prediction, now=None):
         warnings.append('Büyük model–piyasa ayrışması var; bu fark doğrulanmış fiyat avantajı değildir.')
     options = []
     for market, item in prediction.get('markets', {}).items():
-        p = item.get('p')
+        raw_p = item.get('p')
+        calibrated=(prediction.get('calibration_by_market') or {}).get(market) or {}
+        p=calibrated['p'] if calibrated.get('applied') else raw_p
         quote = prediction.get('iddaa_odds', {}).get(market)
         if market not in PICK_MARKETS or not _probability(p) or not _number(quote) or quote <= 1:
             continue
@@ -75,7 +77,8 @@ def analyse(prediction, now=None):
                         'model_market_disagree': gap is not None and gap*100 >= MODEL.get('disagreement_review_pp',20),
                         'movement': movement,
                         'in_preferred_band': PICK_MIN_ODDS <= quote <= PICK_MAX_ODDS,
-                        'meets_probability_threshold': p >= PICK_MIN_P,
+                        'raw_p':raw_p, 'calibration_applied':bool(calibrated.get('applied')),
+                        'meets_probability_threshold': None if small else p >= PICK_MIN_P,
                         'actionable': actionable and not reasons(prediction,market,now)})
     in_band = [c for c in options if c['in_preferred_band']]
     # Fiyat avantajı ayrı sıralamadır; varsayılan isabet listesini veya Banko'yu kapatmaz.

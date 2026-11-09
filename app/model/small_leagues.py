@@ -72,6 +72,8 @@ def bulletin_event(event: dict) -> dict:
                   "groups": available_groups},
     }
 
+    from .licensed_history import for_event
+    result['independent_team_analysis']=for_event(event)
     from ..match_state import describe
     result["match_state"]=describe(result)
     from ..quote_provenance import fresh
