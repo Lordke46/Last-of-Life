@@ -158,17 +158,23 @@ function renderBulletinDays() {
 async function renderMatches() {
   const el=$("#matches"), request=++state.bulletinReq;
   renderBulletinDays();
-  el.innerHTML=Ui.skeleton(4); $("#today").innerHTML=""; $("#oddsDrops").innerHTML="";
   const query=new URLSearchParams({day:state.bulletinDay,category:state.bulletinCategory});
   if(state.league) query.set("league",state.league);
+  const requestKey=query.toString(), keepView=state.bulletinKey===requestKey && state.matchList?.length;
+  if(!keepView) { el.innerHTML=Ui.skeleton(4); $("#today").innerHTML=""; }
+  $("#oddsDrops").innerHTML="";
   try {
     const data=await api(`/api/bulletin?${query}`,{cache:"no-store"});
     if(request !== state.bulletinReq) return;
-    state.bulletinData=data; state.matchList=data.groups.flatMap((g)=>g.matches);
+    state.bulletinKey=requestKey; state.bulletinData=data; state.matchList=data.groups.flatMap((g)=>g.matches);
     if(!state.matchList.some((m)=>m.pick && m.confidence != null)) matchFilters.high=false;
     drawMatchList(); window.Today?.render();
     if(state.league) renderTable(); else $("#table").innerHTML="";
-  } catch(error) { if(request === state.bulletinReq) el.innerHTML=Ui.error(error.message); }
+  } catch(error) {
+    if(request !== state.bulletinReq) return;
+    if(keepView) { drawMatchList(); el.insertAdjacentHTML('afterbegin',Ui.error('Bülten yenilenemedi; son görüntü korunuyor. '+error.message)); }
+    else el.innerHTML=Ui.error(error.message);
+  }
 }
 function drawMatchList() {
   const el=$("#matches"), data=state.bulletinData;
@@ -471,7 +477,7 @@ setInterval(() => {
 setInterval(() => { if (!document.hidden) refreshLive(); }, 60000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLive(); });
 (async () => {
-  await refreshLive();
+  refreshLive(); // Canlı skor ağı bültenin ilk açılışını bekletmez.
   await loadLeagues();
   const hashTab = location.hash.slice(1);
   if (document.getElementById("tab-" + hashTab)) setTab(hashTab);
