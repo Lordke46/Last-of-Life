@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const source=fs.readFileSync('static/app.js','utf8');
 const helpers=source.slice(source.indexOf('function resetMatchFilters()'),source.indexOf('function renderBulletinDays()'));
-test('opening view asks for main leagues, not the full bulletin',()=>{
+test('opening view includes all leagues in the daily bulletin',()=>{
  assert.match(source,/bulletinCategory:"all"/);
  assert.match(source,/state\.bulletinCategory="main"; state\.league=event\.target\.value === "all"/);
 });
