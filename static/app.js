@@ -56,7 +56,7 @@ function selectionImpossible(m, h, a) {
   if (m === "1X") return a > h; if (m === "12") return h === a; if (m === "X2") return h > a;
   return false;
 }
-function liveBadge(m) { return m ? `<span class="badge ${m.state === "in" ? "b-bad" : "b-info"}">${esc(m.home_goals)}–${esc(m.away_goals)} · ${esc(m.minute)}</span>` : ""; }
+function liveBadge(m) { return m ? `<span class="badge ${m.state === "in" ? "b-bad" : "b-info"}">${esc(m.home_goals)}–${esc(m.away_goals)} · ${esc(m.minute)}${m.stale && m.state === "in" ? " · Son kayıt" : ""}</span>` : ""; }
 function pickLive(p) {
   return state.live.get(String(p.id)) || [...state.live.values()].find((m) => m.home === p.home && m.away === p.away);
 }

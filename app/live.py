@@ -30,9 +30,9 @@ def _parse_event(event, league):
     state = typ.get("state")
     if state not in ("in", "post"):
         return None
-    clock = status.get("displayClock") or typ.get("detail") or ""
+    clock = status.get("displayClock") or ""
     period = status.get("period")
-    minute = f"{clock}'" if clock and state == "in" else (typ.get("shortDetail") or "MS")
+    minute = str(clock).rstrip("'′’")+"'" if clock and state == "in" else (typ.get("shortDetail") or typ.get('detail') or ("Canlı" if state=='in' else "MS"))
     return {
         "id": str(event.get("id")), "league": league,
         "home": home.get("team", {}).get("displayName", ""),
@@ -44,8 +44,11 @@ def _parse_event(event, league):
 
 
 def _fetch(league, day):
-    # Include the UTC evening before the selected Istanbul day.
-    dates = (day-timedelta(days=1)).strftime('%Y%m%d')+'-'+day.strftime('%Y%m%d')
+    # Daily scoreboards support a single date. A separate all_previous request
+    # covers matches after midnight Istanbul but still on the previous UTC day.
+    if league == 'all_previous':
+        league, day = 'all', day-timedelta(days=1)
+    dates = day.strftime('%Y%m%d')
     url = f"https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard?dates={dates}&limit=1000"
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=3) as response:
@@ -86,7 +89,9 @@ def _aliases(rows, day):
             score=candidates[0][1]
             key='iddaa:'+str(eid)
             mapped={**score,'id':key,'provider_id':score['id'],'league':event['league']}
-            rows.extend([mapped,{**mapped,'id':str(eid)}])
+            rows.append(mapped)
+            if str(eid) not in by_id:
+                rows.append({**mapped,'id':str(eid)})
             if mapped['state']=='post':
                 saved[key]=mapped
         if saved != previous:
@@ -98,6 +103,8 @@ def _aliases(rows, day):
 
 def _snapshot():
     rows = list({m['id']:m for league,items in _cache['leagues'].items() for m in items}.values())
+    rows=[{**m,'updated_at':_cache['sources'].get(m['source_key'],{}).get('last_success_at'),
+           'stale':_cache['sources'].get(m['source_key'],{}).get('status')!='success'} if m.get('source_key') else m for m in rows]
     try:
         rows = _aliases(rows, _cache['day'])
     except Exception:
@@ -117,7 +124,7 @@ def get_live_snapshot(day=None):
     try:
         if _cache.get('day')!=day:
             _cache.update(day=day, at=0., leagues={}, sources={}, updated_at=None)
-        futures = {pool.submit(_fetch, league, day): league for league in ['all',*LEAGUES]}
+        futures = {pool.submit(_fetch, league, day): league for league in ['all','all_previous',*LEAGUES]}
         done, pending = wait(futures, timeout=LIVE_DEADLINE_SECONDS)
         now = datetime.now(timezone.utc).isoformat()
         successes = 0

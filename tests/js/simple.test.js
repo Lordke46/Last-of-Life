@@ -105,3 +105,19 @@ test('result-only summaries show the result label once and have no recommendatio
  assert.equal((html.match(/Bitti/g)||[]).length,1);
  assert.doesNotMatch(html,/Net öneri yok/);
 });
+
+test('live score replaces pending status while recorded prematch odds stay visible',()=>{
+ const match={kickoff:'2020-01-01T12:00Z',live_result:{state:'in',home_goals:1,away_goals:0,minute:"32'"},
+  prematch_recommendation:{kickoff:'2020-01-01T12:00Z',captured_at:'2020-01-01T11:00Z',pick:{market:'A2.5',odds:1.8,p:.6,probability_source:'iddaa_market'}}};
+ assert.match(Simple.pickBlock(match),/Canlı|1–0/);
+ assert.doesNotMatch(Simple.pickBlock(match),/Sonuç bekleniyor/);
+ const history=Simple.historyBlock(match);
+ assert.match(history,/Maç öncesi öneri|1\.80|60% piyasa olasılığı/);
+ assert.doesNotMatch(history,/slip-add|Kupona ekle/);
+ assert.match(Simple.pickBlock({...match,live_result:{...match.live_result,state:'post'}}),/Bitti/);
+});
+
+test('no old recommendation is fabricated and a future record stays out of the history view',()=>{
+ assert.match(Simple.historyBlock({kickoff:'2020-01-01T12:00Z'}),/kaydedilmiş maç öncesi öneri yok/);
+ assert.equal(Simple.historyBlock({prematch_recommendation:{kickoff:'2099-01-01T12:00Z',pick:{market:'1',odds:1.8}}}), '');
+});

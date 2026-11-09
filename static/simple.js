@@ -52,7 +52,7 @@
   function info(m) {
     const live = m.live_result;
     if (live && ["in","post"].includes(live.state) && Number.isInteger(live.home_goals) && Number.isInteger(live.away_goals)) {
-      return {market:null,headline:live.state === "in" ? "Canlı" : "Bitti",
+      return {market:null,headline:live.state === "in" ? (live.stale ? "Son alınan skor" : "Canlı") : "Bitti",
         title:`${live.home_goals}–${live.away_goals}`,level:0,level_label:"",odds:null,
         reason:live.state === "in" ? `Canlı skor · ${live.minute || "Maç sürüyor"}` : "Kesin maç sonucu"};
     }
@@ -113,7 +113,8 @@
 
   function historyBlock(m) {
     const record=m.prematch_recommendation, pick=record?.pick;
-    if (!pick || !pick.market || !Number.isFinite(pick.odds)) return "";
+    if (!pick || !pick.market || !Number.isFinite(pick.odds)) return Date.parse(m.kickoff)<=Date.now()
+      ? '<div class="prematch-history"><small>Bu maç için kaydedilmiş maç öncesi öneri yok. Mevcut kayıtlı oranları Detaylar bölümünde görebilirsiniz.</small></div>' : "";
     if (Date.parse(record.kickoff) > Date.now() && !["in","post"].includes(m.live_result?.state)) return "";
     const captured=new Date(record.captured_at);
     const time=Number.isNaN(captured.getTime()) ? "" : captured.toLocaleString("tr-TR",{timeZone:"Europe/Istanbul",day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"});

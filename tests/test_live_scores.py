@@ -15,3 +15,8 @@ class LiveScoreParsing(unittest.TestCase):
     def test_string_zero_and_provider_score_objects_are_valid(self):
         score=_parse_event(self.event('0',{'value':2}),'eng.1')
         self.assertEqual((score['home_goals'],score['away_goals'],score['state']),(0,2,'post'))
+
+    def test_provider_minute_suffix_is_not_duplicated(self):
+        event=self.event('1','0')
+        event['status']={'displayClock':"50'",'type':{'state':'in'}}
+        self.assertEqual(_parse_event(event,'all')['minute'],"50'")
