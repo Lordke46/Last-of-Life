@@ -149,6 +149,8 @@ def build_bulletin(day: date, category: str, league: str | None = None):
             matches.append(out)
     for fixture in fixtures:
         if str(fixture['id']) not in covered:matches.append(fixture_view(fixture,histories.get(str(fixture["id"]),{})))
+    from .recommendation_history import decorate
+    decorate(matches)
     groups={}
     for item in matches:
         group=groups.setdefault(item['league'],{'league':item['league'],'name':item['league_name'],

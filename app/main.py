@@ -75,7 +75,8 @@ def _attach_iddaa_odds(items: list[dict]) -> list[dict]:
         item["iddaa_movement"] = movements.get(str(item["id"]), {})
         if "pick" in item:
             item["summary"] = explain.summarize(item)
-    return blended
+    from .recommendation_history import decorate
+    return decorate(blended)
 
 
 @app.get("/api/leagues")
@@ -104,8 +105,8 @@ def _leagues():
 
 
 @app.get("/api/live")
-def live_scores():
-    return live.get_live_snapshot()
+def live_scores(day: date | None = None):
+    return live.get_live_snapshot(day)
 
 
 @app.get("/api/upcoming")
@@ -157,6 +158,8 @@ def _small_prediction(event: dict) -> dict:
         event={**event,'quote_provenance':quote_provenance.for_event(state,event.get('iddaa_event_id',event.get('event_id',event.get('id'))))}
     result=bulletin_event(event)
     result['summary']=explain.summarize(result)
+    from .recommendation_history import decorate
+    decorate([result])
     return result
 
 
@@ -199,14 +202,16 @@ def match(match_id: str, competition_id: Annotated[int | None, Query(ge=1)] = No
                     archived_fixture=conn.execute('SELECT * FROM matches WHERE id=?',(archived['match_id'],)).fetchone()
                     if archived_fixture and archived_fixture['league'] in LEAGUES:
                         from .bulletin_api import fixture_view
-                        return {**fixture_view(dict(archived_fixture),archived),'id':match_id}
+                        from .recommendation_history import decorate
+                        return decorate([{**fixture_view(dict(archived_fixture),archived),'id':match_id}])[0]
                 return _small_prediction({**archived,'id':match_id,'iddaa_event_id':event_id,
                                           'iddaa_odds':archived.get('odds',{}),'small_league':True,
                                           'odds_current':False,'is_archived':True})
         fixture=conn.execute('SELECT * FROM matches WHERE id=?',(match_id,)).fetchone()
     if fixture and fixture['league'] in LEAGUES and (fixture['completed'] or parse_ts(fixture['kickoff'])<=datetime.now(timezone.utc)):
         from .bulletin_api import fixture_view
-        return fixture_view(dict(fixture))
+        from .recommendation_history import decorate
+        return decorate([fixture_view(dict(fixture))])[0]
     for lg in LEAGUES:
         m = next((x for x in engine.get_model(lg).upcoming if x["id"] == match_id), None)
         if m:

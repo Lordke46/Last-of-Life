@@ -217,7 +217,7 @@ class LiveTests(unittest.TestCase):
         self.assertEqual(failed['updated_at'],good['updated_at'])
 
     def test_total_deadline_does_not_wait_for_every_league(self):
-        def slow(league):
+        def slow(league, day):
             time.sleep(.15)
             return {'events':[]}
         with patch.object(live,'LEAGUES',{str(i):{} for i in range(11)}), patch.object(live,'_fetch',side_effect=slow), patch.object(live,'LIVE_DEADLINE_SECONDS',.02):

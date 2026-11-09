@@ -34,6 +34,16 @@ def results(ids: Annotated[list[str], Query(min_length=1, max_length=30)]):
                 row=conn.execute('SELECT kickoff,completed,home_goals,away_goals,status,updated_at FROM matches WHERE id=?',
                                  (archived['match_id'],)).fetchone()
                 if row:rows[mid]={**dict(row),'id':mid}
+        # Small leagues have no matches-table row. Keep verified provider finals available
+        # to personal coupons after the fixture disappears from the current scoreboard.
+        import json
+        for record in conn.execute('SELECT value FROM meta WHERE key LIKE ?', ('verified_scores:%',)):
+            scores=json.loads(record['value'])
+            for mid in ids:
+                key='iddaa:'+mid.removeprefix('iddaa:')
+                score=scores.get(key)
+                if score and score.get('state')=='post' and not (rows.get(mid) or {}).get('completed'):
+                    rows[mid]={**score,'id':mid,'completed':1,'status':'FT','updated_at':score.get('updated_at')}
     now = datetime.now(timezone.utc)
     out = {}
     for mid in ids:
