@@ -76,6 +76,10 @@ def verify(url):
             upload_skill = {**headers,'Idempotency-Key':'pg-skill-result','X-Research-Claim':claimed['claim_token'],'X-Skill-Version':'test'}
             converted = client.post('/api/research/jobs/'+skill_job['id']+'/skill-results',json=skill,headers=upload_skill)
             assert converted.status_code == 200, converted.text
+            replay = client.post('/api/research/jobs/'+skill_job['id']+'/skill-results',json=skill,headers=upload_skill)
+            assert replay.status_code == 200 and replay.json()['duplicate'], replay.text
+            skill_report = client.get('/api/research/reports/'+converted.json()['report_id'],headers=headers)
+            assert skill_report.status_code == 200 and skill_report.json()['report']['mode'] == 'lineup_check', skill_report.text
             with patch.dict(os.environ, {'RESEARCH_DATABASE_URL':url}):
                 assert client.get('/api/research/jobs',headers=headers).status_code == 503, 'Privileged DSN must fail closed'
 
@@ -100,4 +104,4 @@ def verify(url):
                     raise AssertionError('Runtime unexpectedly permitted: '+sql)
             except psycopg.errors.InsufficientPrivilege:
                 pass
-    print('Research PostgreSQL: six endpoints, idempotency, privileged-DSN rejection and 11 forbidden source/credential/revision/DDL operations passed')
+    print('Research PostgreSQL: schema/jobs/context/claim/renew/skill-results/reports, idempotency, privileged-DSN rejection and 11 forbidden operations passed')
