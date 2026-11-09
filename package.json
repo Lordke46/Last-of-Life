@@ -1,0 +1,7 @@
+{
+  "name": "last-of-life",
+  "private": true,
+  "scripts": {
+    "start": "sh run.sh"
+  }
+}

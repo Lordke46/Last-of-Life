@@ -46,3 +46,12 @@ Kapsam araştırması: ESPN esp.2 resmi scoreboard kaynağı 9 Kasım için iki 
 ## Aynı küçük lig adaylarıyla politika karşılaştırması
 
 9 Kasım canlı kuponundaki aynı dört aday üzerinde, mevcut kupon dört maç/3,95 oran/%12,78 piyasa çarpımı veriyor. Yeni seçici sağlayıcının minimum üç maç koşulunu koruyarak üç ayrı üç maçlı alternatif üretiyor; ilkinde 2,744 oran/%21,40 piyasa çarpımı var. Bu ölçüm gerçek sonuç isabeti değildir; aynı mevcut adayların farklı birleştirilmesidir. Tam veri [küçük kupon karşılaştırması](benchmarks/small-coupon-policy-2026-11-09.json).
+
+## Yerel doğrulama ve kaynak sınırlamaları
+
+- `npm start` Python sunucusunu başlatır. `LOCAL_DB_PATH=/tmp/...` ayrı SQLite dosyası seçer; `DATABASE_URL` doluysa PostgreSQL önceliği korunur. `LOCAL_PYTHON` kurulu test ortamını kullanabilir; `LOCAL_AUTO_UPDATE=0` yerel başlangıç güncellemesini kapatır.
+- Ayrı `/tmp/lol-reliability-ui.db` üzerinde 4.524 izinli dışa aktarılmış maç ve altı gerçek küçük lig detayıyla bülten ve kupon sayfalarının tarayıcı DOM'u incelendi. Tüm bülten seçili, altı maç çizildi; kupon sayfasında ayrı piyasa verili alternatifler çizildi. Bu veri kopyası üretim değildir; eksik sağlayıcı minimum bahis adetleri gibi alanlar yüzünden bu gözlem gerçek kupon performansı kanıtı olarak kullanılamaz.
+- Yeni boş havuz açıklaması “bu gün modellenmiş ana lig maçı yok” diyerek model kapsamını bildirir; bütün maçların uygunsuz olduğu izlenimini vermez.
+- ESPN `esp.2` kaynak incelemesinde iddaa katalog kimliği `1951` doğrulandı. Ancak 9 Kasım maçlarında iki kaynak aynı takımları ters ev/deplasman sırasında verdi (ESPN Real Sociedad II–Sabadell / Eldense–Las Palmas; İddaa Sabadell–Real Sociedad B / Las Palmas–Eldense). Otomatik ters eşleştirme yapılmayacak; mevcut `match_event` taraf uyumu zorunluluğu korunacak.
+- ESPN'in yönlendirdiği [kullanım koşulları](https://disneytermsofuse.com/english/) otomatik veri çıkarmayı kısıtlıyor; kamuya açık uç nokta yeniden yayım lisansı değildir. Yeni kapsam için [CC0 OpenFootball](https://github.com/openfootball/football.json) adapteri araştırılıyor. İddaa fiyatlarının bağımsız model doğrulaması olduğu iddia edilmeyecek.
+- Son toplu test: 426 Python ve 83 JavaScript geçti; bundan sonra eklenen yerel başlatma/boş havuz metni için son bütünleşik kontrol tekrar yapılacak.

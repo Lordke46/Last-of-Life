@@ -33,7 +33,7 @@ test("missing and partial coupon data renders a safe empty state", () => {
   assert.match(empty, /Olasılık/);
   assert.doesNotMatch(empty, /undefined|NaN/);
   assert.match(CouponView.couponCard(null, "Banko", "b-good"), /uygun maç bulunamadı/);
-  assert.match(CouponView.couponCard({ picks: [{}], total_odds: null, total_probability: null }, "Banko", "b-good"), /Toplam oran:<\/b> - · <b>Toplam tutma:<\/b> -/);
+  assert.match(CouponView.couponCard({ picks: [{}], total_odds: null, total_probability: null }, "Banko", "b-good"), /Toplam oran:<\/b> - · <b>Toplam tahmini olasılık:<\/b> -/);
 });
 
 test("coupon groups display multiple alternatives under their type", () => {
@@ -112,3 +112,8 @@ test('small league alternatives render and share as distinct market-only coupons
  assert.match(html,/data-share-index="1"/);
  assert.match(html,/model güveni yok/);
 });
+
+ test('empty modeled pool explains model scope without rejecting small leagues',()=>{
+ assert.match(CouponView.emptyReason({matches:0},'banko'),/bağımsız takım modeli/);
+ assert.match(CouponView.emptyReason({matches:0},'surprise'),/piyasa verili alternatifleri/);
+ });

@@ -23,7 +23,7 @@ _load_dotenv(BASE_DIR / ".env")
 
 # Doluysa ortak Supabase Postgres (transaction pooler, port 6543); boşsa yerel SQLite dosyası.
 DATABASE_URL = os.environ.get("DATABASE_URL") or None
-DB_PATH = BASE_DIR / "data" / "iddia.db"
+DB_PATH = Path(os.environ.get("LOCAL_DB_PATH") or BASE_DIR / "data" / "iddia.db")
 STATIC_DIR = BASE_DIR / "static"
 
 # Lig anahtarları ESPN fikstür sayfalarındaki kısaltmalardır. Ek alanlar:

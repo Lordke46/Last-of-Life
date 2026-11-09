@@ -143,7 +143,7 @@ def _coupon(kind: str, picks: list[dict], note: str) -> dict:
         + ("Kalan seçimler model/piyasa tahminidir; gerçekleşmiş başarıları henüz doğrulanmadı."
            if calibration_status == "limited" else "Olasılıklar tahmindir; garanti değildir.")
     ) if kind == "banko" and picks else None
-    return {"type": kind, "selection_policy": SELECTION_POLICY if kind == "banko" else "balanced_v2",
+    return {"type": kind, "selection_policy": SELECTION_POLICY if kind == "banko" else "market_only_v2" if kind == "small" else "balanced_v2",
             "calibration_status": calibration_status, "calibration_note": calibration_note,
             "picks": picks, "stake_note": note, "odds_source": source,
             "iddaa_picks": sum(p["odds_source"] == "iddaa" for p in picks),

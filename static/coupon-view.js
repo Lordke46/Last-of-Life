@@ -49,7 +49,7 @@
       ? `<table><thead><tr><th class="l">Maç</th><th>Lig</th><th>Saat</th><th>Seçim</th><th>Oran</th><th>Olasılık</th></tr></thead><tbody>${rows}</tbody></table>`
       : `<p class="muted">Bu kupon için uygun maç bulunamadı.</p>`;
     const totals = picks.length
-      ? `<div class="coupon-total"><b>Toplam oran:</b> ${esc(displayNumber(coupon.total_odds))} · <b>Toplam tutma:</b> ${probability(coupon.total_probability)}<br><span class="muted">${esc(coupon.stake_note || "")}</span></div>`
+      ? `<div class="coupon-total"><b>Toplam oran:</b> ${esc(displayNumber(coupon.total_odds))} · <b>Toplam tahmini olasılık:</b> ${probability(coupon.total_probability)}<br><span class="muted">${esc(coupon.stake_note || "")}</span></div>`
       : "";
     const shareActions = picks.length && share
       ? `<div class="coupon-share-actions"><button type="button" class="btn" data-share-coupon data-share-type="${esc(share.kind)}" data-share-index="${share.index}">Paylaş</button><select aria-label="Görsel boyutu" data-share-size><option value="square">Kare 1080×1080</option><option value="story">Story 1080×1920</option></select></div>`
@@ -78,6 +78,9 @@
     const label = type === "small_leagues" ? "Piyasa verili küçük ligler" : type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
     const diag = data && typeof data === "object" ? data[`${type}_diagnostics`] || {} : {};
     const lines = [];
+    if (type !== "small_leagues" && data && Number(data.matches) === 0) {
+      return "Bu gün bağımsız takım modeliyle değerlendirilmiş, henüz başlamamış ana lig maçı yok. Küçük liglerin piyasa verili alternatifleri aşağıda gösterilir.";
+    }
     if (diag.stale_odds) {
       const age = Number(diag.odds_age_minutes);
       const when = Number.isFinite(age) ? `Oranlar ${Math.trunc(age)} dk önce alındı. ` : "";
