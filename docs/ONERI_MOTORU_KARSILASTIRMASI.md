@@ -72,3 +72,20 @@ Dış referans için yalnız araştırma ortamında numpy, scipy ve pandas gerek
 ## Salt okunur üretim denetimi
 
 Backtest worker'ın isteğe bağlı `audit_export=true` çalışması şema güncellemesini ve iş kuyruğunu atlar. PostgreSQL oturumu `SET TRANSACTION READ ONLY` ile açılır. Yalnız herkese açık maç sonuçları ve izinli tahmin alanları üç gün saklanan artifact'a yazılır; kullanıcı, kişisel kupon, oturum veya bağlantı bilgisi dışa aktarılmaz. Canlı veritabanında değişiklik yapmaz.
+
+## Gerçek üretim kayıtlarında seçim tekrarı
+
+Salt okunur denetim başarıyla çalıştı: 4.524 maç, 226 ilk tahmin kaydı. Sonuçlanmış ve kayıtlı fiyatı olan 101 maç değerlendirilebildi. Bu, saklanmış yüzdelerden farklı seçim yapılmış olsaydı ne olacağını ölçer; yeni gol modelinin doğrulaması değildir. Oran güncelliği ve tüm üretim engelleri bu dışa aktarımda yeniden oynatılamaz.
+
+| Aynı 64 maç | Doğru | İsabet | Ortalama gerçek fiyat | Birim başına getiri |
+|---|---:|---:|---:|---:|
+| Dengeli seçim | 44 | %68,75 | 1,4947 | +%2,67 |
+| En yüksek olasılık | 50 | %78,12 | 1,2214 | −%4,38 |
+
+Tüm uygun 101 maçta yüksek olasılık seçeneği 75 kez tuttu (%74,26), getiri −%10,21 oldu. Bu sonuç yüksek tutma ihtimalinin uygun fiyat anlamına gelmediğini gösterir. Küçük veri seti ve belirsizlik aralıkları nedeniyle başarı artışı kesinleşmiş değildir. Dengeli ana öneriyi koruyup yüksek olasılık seçeneğini ayrı sunma kararının gerekçesi budur.
+
+Kalibrasyon için yalnız orijinal kayıt zamanından önce bilinebilen sonuçlar kullanıldı. Kayıt anında yeterli geçmiş bulunmadığında kalibrasyon uygulanmadı. Gerçekte yayımlanmış 65 seçimin sonuçları ayrıca korunur; ortak karşılaştırmada 64 maç vardır.
+
+Tekrar çalıştırma: `python scripts/replay_recorded_picks.py --input /path/model-audit.json --output /tmp/replay.json`.
+
+[Ham toplu sonuçlar](benchmarks/recorded-selection-2026-11-09.json). Kullanıcı veya kişisel kupon verisi içermez.

@@ -1,0 +1,87 @@
+{
+  "scope": "counterfactual_selection_on_recorded_probabilities_and_prices",
+  "exported_at": "2026-11-09T00:41:17.821320+00:00",
+  "eligible_quote_cohort": 101,
+  "all_available": {
+    "original_published": {
+      "n": 65,
+      "won": 45,
+      "hit_rate": 0.6923,
+      "interval95": [
+        0.572,
+        0.7911
+      ],
+      "mean_odds": 1.4892,
+      "predicted_rate": 0.6127,
+      "roi": 0.0285
+    },
+    "balanced_replay": {
+      "n": 64,
+      "won": 44,
+      "hit_rate": 0.6875,
+      "interval95": [
+        0.5661,
+        0.7877
+      ],
+      "mean_odds": 1.4947,
+      "predicted_rate": 0.6101,
+      "roi": 0.0267
+    },
+    "highest_probability_replay": {
+      "n": 101,
+      "won": 75,
+      "hit_rate": 0.7426,
+      "interval95": [
+        0.6495,
+        0.8178
+      ],
+      "mean_odds": 1.2081,
+      "predicted_rate": 0.7273,
+      "roi": -0.1021
+    }
+  },
+  "same_matches": {
+    "original_published": {
+      "n": 64,
+      "won": 44,
+      "hit_rate": 0.6875,
+      "interval95": [
+        0.5661,
+        0.7877
+      ],
+      "mean_odds": 1.4947,
+      "predicted_rate": 0.6101,
+      "roi": 0.0267
+    },
+    "balanced_replay": {
+      "n": 64,
+      "won": 44,
+      "hit_rate": 0.6875,
+      "interval95": [
+        0.5661,
+        0.7877
+      ],
+      "mean_odds": 1.4947,
+      "predicted_rate": 0.6101,
+      "roi": 0.0267
+    },
+    "highest_probability_replay": {
+      "n": 64,
+      "won": 50,
+      "hit_rate": 0.7812,
+      "interval95": [
+        0.6657,
+        0.865
+      ],
+      "mean_odds": 1.2214,
+      "predicted_rate": 0.7209,
+      "roi": -0.0438
+    }
+  },
+  "limitations": [
+    "No quote provenance/freshness replay; candidates may be rejected by current production gates.",
+    "Calibration uses only results available before original capture time.",
+    "Stored probabilities are existing model versions; this does not validate the new fitted goal model.",
+    "Counterfactual replay is development evidence, not forward performance or a profitability guarantee."
+  ]
+}

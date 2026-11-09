@@ -56,7 +56,7 @@ def apply(prediction, now=None):
     out['pick'] = pick
     strongest=P.best_pick(eligible,min_odds=1.15,actual_odds=prediction.get('iddaa_odds',{}))
     if strongest:
-        strongest={**strongest,'policy':'highest_probability_v1',**P.confidence(strongest['p'],prediction.get('data_n',0),data_integrity=prediction.get('data_integrity'))}
+        strongest={**strongest,'estimated_edge':round(strongest['p']*strongest['odds']-1,4),'policy':'highest_probability_v1',**P.confidence(strongest['p'],prediction.get('data_n',0),data_integrity=prediction.get('data_integrity'))}
         if not strongest.get('calibration_applied'):
             strongest['confidence']=min(strongest['confidence'],.69)
             strongest['confidence_label']=P.confidence_label(strongest['confidence'])
