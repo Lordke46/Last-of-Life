@@ -28,5 +28,5 @@ class LicensedHistoryTests(unittest.TestCase):
 
     def test_same_day_future_results_do_not_enter_history(self):
         out=assess({'home':'Alpha','away':'Beta'},self.data(),datetime(2025,4,1,12,tzinfo=timezone.utc))
-        self.assertEqual(out['history_matches'],90)
+        self.assertEqual(out['history_matches'],89)
         self.assertFalse(out['available'])

@@ -34,8 +34,8 @@ def _fit(serialized, day):
     for raw in payload['rows']:
         # Date-only results become available the following UTC day, never at invented kickoff times.
         available=datetime.fromisoformat(raw['kickoff']).replace(tzinfo=timezone.utc)+timedelta(days=1)
-        if available>cutoff:continue
-        rows.append({**raw,'ts':available-timedelta(hours=3),'home_id':None,'away_id':None})
+        if available+timedelta(hours=3)>cutoff:continue
+        rows.append({**raw,'ts':available,'home_id':None,'away_id':None})
     return payload,rows,FittedGoals(rows,cutoff)
 
 
