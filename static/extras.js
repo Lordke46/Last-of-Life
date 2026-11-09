@@ -35,7 +35,7 @@ window.Extras = (() => {
     if (bar) { bar.classList.toggle("active", onlyFavs); bar.setAttribute("aria-pressed", String(onlyFavs)); }
   }
   function filterButton() {
-    return `<div class="fav-bar"><button type="button" id="favFilter" class="chip${onlyFavs ? " active" : ""}" aria-pressed="${onlyFavs}">★ Favorilerim <span class="muted">${favs.length}</span></button></div>`;
+    return `<div class="fav-bar"><button type="button" id="favFilter" class="chip${onlyFavs ? " active" : ""}" aria-pressed="${onlyFavs}" ${!favs.length ? "disabled" : ""}>★ Favorilerim <span class="muted">${favs.length}</span></button></div>`;
   }
   /** renderMatches() sonrası: yüklenen maç listesini önbelleğe alır, Bugün kartını doldurur. */
   function afterMatches(list) { lastUpcoming = list || []; applyFilter(); renderFavToday(); }
