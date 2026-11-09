@@ -44,9 +44,37 @@ function prospectiveHtml(forward) {
       const m = v.metrics;
       return `<tr><td>${esc(name)}</td><td>${m.n || 0}</td><td>${m.brier ?? "—"}</td><td>${m.logloss ?? "—"}</td></tr>`;
     }).join("");
-    return `<div class="card"><h3>Yayımlanmış tahminlerin gerçek sonuçları</h3><p class="muted">İlk maç öncesi kayıtlar; üç varyant aynı maçlarda karşılaştırılır. Kayıtlı tahmin: ${Number(forward.stored) || 0}. ${forward.evaluation_status === "insufficient_data" ? "Kalibrasyon için yeterli kayıt yok; doğruluk artışı gösterilmiş değil." : "Örnek sayısı yeterli olmak tek başına kalibrasyon veya başarı kanıtı değildir."} Sonuçlar veri biriktikçe oluşur. Yukarıdaki geçmiş testten ayrıdır.</p><table><tr><th>Varyant</th><th>Maç</th><th>Brier</th><th>Log-loss</th></tr>${rows}</table></div>` + confidenceReportHtml(forward.recommendations) + realOddsPerformanceHtml(forward.real_odds_picks);
+    return `<div class="card"><h3>Yayımlanmış tahminlerin gerçek sonuçları</h3><p class="muted">İlk maç öncesi kayıtlar; üç varyant aynı maçlarda karşılaştırılır. Kayıtlı tahmin: ${Number(forward.stored) || 0}. ${forward.evaluation_status === "insufficient_data" ? "Kalibrasyon için yeterli kayıt yok; doğruluk artışı gösterilmiş değil." : "Örnek sayısı yeterli olmak tek başına kalibrasyon veya başarı kanıtı değildir."} Sonuçlar veri biriktikçe oluşur. Yukarıdaki geçmiş testten ayrıdır.</p><table><tr><th>Varyant</th><th>Maç</th><th>Brier</th><th>Log-loss</th></tr>${rows}</table></div>` + confidenceReportHtml(forward.recommendations);
   }
   return "";
+}
+
+function strongestPicksHtml(report) {
+  const s = report?.summary || {}, n = Number(s.n) || 0;
+  if (!n) return "";
+  return `<div class="card"><h3>En yüksek olasılık seçeneği: kaydedilmiş sonuçlar</h3>
+    <p class="muted">${n} sonuçlanan seçim · gerçek isabet ${mrPct(s.hit_rate)} · tahmin edilen olasılık ${mrPct(s.predicted_rate)}. Bu seçimler dengeli önerilerle aynı maçlarda örtüşebilir; iki grubu toplamayın.</p></div>`;
+}
+
+function ensembleReportHtml(selection) {
+  const entries = Object.entries(selection || {});
+  if (!entries.length) return "";
+  const rows = entries.map(([league, data]) => {
+    const weight = Number(data.fitted_weight) || 0;
+    const validation = data.validation || {};
+    const selectedKey = weight === 1 ? "1.0" : weight === .5 ? "0.5" : null;
+    const evidence = selectedKey ? validation[selectedKey] : Object.values(validation)
+      .filter(v => Number.isFinite(v.delta_brier)).sort((a,b) => a.delta_brier-b.delta_brier)[0];
+    const name = state.leagues.find(l => l.id === league)?.name || league;
+    const model = weight === 0 ? "Mevcut" : weight === .5 ? "%50 harman" : "Öğrenilmiş gol modeli";
+    const delta = evidence?.delta_brier;
+    const deltaLabel = delta == null ? "—" : `${selectedKey ? "Seçilen" : "Aday"} ${delta >= 0 ? "+" : "−"}${Math.abs(delta).toFixed(4)}`;
+    return `<tr><td class="l">${esc(name)}</td><td>${model}</td><td>${evidence?.n ?? 0}</td><td>${deltaLabel}</td></tr>`;
+  }).join("");
+  return `<div class="card"><h3>Motor karşılaştırması</h3>
+    <p class="muted">Yeni model yalnız geçmiş doğrulama desteklerse devreye girer; geçmiş test canlı başarı garantisi değildir.</p>
+    <div class="mr-scroll"><table><tr><th class="l">Lig</th><th>Seçili motor</th><th>Doğrulama maçı</th><th>Brier farkı</th></tr>${rows}</table></div>
+    <p class="muted small">Mevcut motor tutulduysa fark, en iyi adayın doğrulama farkıdır.</p></div>`;
 }
 
 async function backtestControl(box) {
@@ -97,18 +125,18 @@ async function renderModelReport() {
   box.innerHTML = Ui.skeleton(2);
   let r;
   try { r = await api("/api/model-report"); } catch (e) { box.innerHTML = Ui.error(e.message); return; }
-  if (!r.computed_at || !r.overall.n) { box.innerHTML = Ui.empty("Geçmiş karne henüz hazır değil", "Veriler güncellendikten sonra burada görünecek.") + prospectiveHtml(r.prospective); await backtestControl(box); return; }
+  if (!r.computed_at || !r.overall.n) { box.innerHTML = realOddsPerformanceHtml(r.prospective?.real_odds_picks) + strongestPicksHtml(r.prospective?.strongest_picks) + ensembleReportHtml(r.ensemble_selection) + prospectiveHtml(r.prospective) + Ui.empty("Geçmiş karne henüz hazır değil", "Veriler güncellendikten sonra burada görünecek."); await backtestControl(box); return; }
   const o = r.overall, c = r.coupons;
   const bankoRate = c && c.banko && (c.banko.won + c.banko.lost) ? mrPct(c.banko.hit_rate, 0) : "–";
-  box.innerHTML = `
+  box.innerHTML = realOddsPerformanceHtml(r.prospective?.real_odds_picks) + strongestPicksHtml(r.prospective?.strongest_picks) + ensembleReportHtml(r.ensemble_selection) + `
     <h2 class="sec-title">Karne</h2>
-    <p class="muted">Tahminlerimiz geçmiş maçlarda ne kadar tuttu? Her maç, yalnızca o günden önceki bilgilerle tahmin edildi.</p>
+    <p class="muted">Geçmiş 1X2 testi: en olası maç sonucu, yalnızca maçtan önceki sonuç verileriyle yeniden kurulur. Bu, yayımlanan önerilerin isabet oranı değildir.</p>
     <div class="mr-kpis">
-      <div class="card"><div class="muted">Maç sonucunu bilme oranı</div><div class="ch-big">${mrPct(o.accuracy, 0)}</div><div class="muted">${o.n.toLocaleString("tr-TR")} maç incelendi</div></div>
+      <div class="card"><div class="muted">Geçmiş 1X2 testi</div><div class="ch-big">${mrPct(o.accuracy, 0)}</div><div class="muted">${o.n.toLocaleString("tr-TR")} maç · öneri isabeti değildir</div></div>
       <div class="card"><div class="muted">Rastgele tahmine göre</div><div class="ch-big">${mrDiff(o.vs_random)}</div><div class="muted">Rastgele tahmin yaklaşık %33 tutar</div></div>
       <div class="card"><div class="muted">Banko kupon tutma oranı</div><div class="ch-big">${bankoRate}</div><div class="muted">Sonuçlanan kuponlar</div></div>
     </div>
-    <div class="card"><h3>Son 30 gün</h3>${mrTrendSvg(r.trend)}<p class="muted">Günlük doğru tahmin oranı · ${r.trend.reduce((s, d) => s + d.n, 0)} maç</p></div>
+    <div class="card"><h3>Geçmiş 1X2 testi · son 30 gün</h3>${mrTrendSvg(r.trend)}<p class="muted">Günlük en olası maç sonucu isabeti · ${r.trend.reduce((s, d) => s + d.n, 0)} maç; yayımlanan öneri isabeti değildir.</p></div>
     ${detail("Detaylar", `<h4>Liglere göre</h4><div class="mr-scroll"><table><tr><th class="l">Lig</th><th>Maç</th><th>Doğru tahmin</th></tr>
       ${r.leagues.map((l) => `<tr><td class="l">${esc(l.name)}</td><td>${l.n}</td><td>${mrPct(l.accuracy, 0)}</td></tr>`).join("")}</table></div>
       ${c ? `<h4>Kuponlar</h4><table><tr><th class="l">Kupon</th><th>Tutan</th><th>Tutma</th></tr>${mrCouponRow("Banko", c.banko)}${mrCouponRow("Sürpriz", c.surprise)}${mrCouponRow("Toplam", c.total)}</table>` : ""}`)}

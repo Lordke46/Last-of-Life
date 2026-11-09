@@ -55,7 +55,7 @@ class BankoTest(unittest.TestCase):
         self.assertNotIn('1X',[p['market'] for p in picks])
 
     def test_hit_rate_policy_does_not_require_positive_expected_profit(self):
-        entries = [entry(i, {"1": (.65, 1.40)}) for i in (1, 2, 3)]
+        entries = [entry(i, {"1": (.72, 1.30)}) for i in (1, 2, 3)]
         picks = select_banko(entries)
         self.assertEqual(len(picks), 2)
         self.assertTrue(all(p["value"] < 0 for p in picks))
@@ -90,8 +90,8 @@ class BankoTest(unittest.TestCase):
         self.assertEqual(cp.calibration.MIN_SAMPLES, 30)
         entries = []
         for i in (1, 2, 3):
-            prediction = pred(i, {"1": (.7, 1.6)})
-            prediction["calibration_by_market"] = {"1": {"p": 0.7, "n": 18, "applied": False}}
+            prediction = pred(i, {"1": (.72, 1.6)})
+            prediction["calibration_by_market"] = {"1": {"p": 0.72, "n": 18, "applied": False}}
             entries.append((prediction, _choices(prediction, {"1": 1.6})))
         report = {}
         alternatives = cp._select_balanced(entries, "banko", 1, report)
@@ -147,16 +147,24 @@ class BankoTest(unittest.TestCase):
         self.assertEqual(select_banko(entries),[])
 
     def test_two_matches_are_preferred_to_needless_extra_risk(self):
-        picks=select_banko([entry(i,{'1':(.7,1.6)}) for i in (1,2,3)])
+        picks=select_banko([entry(i,{'1':(.72,1.6)}) for i in (1,2,3)])
         self.assertEqual(len(picks),2)
-        self.assertAlmostEqual(math.prod(p['p'] for p in picks),.49)
+        self.assertAlmostEqual(math.prod(p['p'] for p in picks),.5184)
 
     def test_source_minimum_match_count_is_enforced(self):
-        entries=[entry(i,{'1':(.72,1.6)}) for i in (1,2,3)]
+        entries=[entry(i,{'1':(.80,1.6)}) for i in (1,2,3)]
         for _,choices in entries:
             for choice in choices: choice['min_matches']=3
         self.assertEqual(select_banko(entries[:2]),[])
         self.assertEqual(len(select_banko(entries)),3)
+
+    def test_banko_cannot_trade_hit_probability_for_an_odds_floor(self):
+        entries=[entry(i,{'Ü1.5':(.84,1.20),'1':(.71,1.7)}) for i in (1,2)]
+        picks=select_banko(entries)
+        self.assertEqual([p['market'] for p in picks],['Ü1.5','Ü1.5'])
+        self.assertAlmostEqual(math.prod(p['odds'] for p in picks),1.44)
+        self.assertGreaterEqual(math.prod(p['p'] for p in picks),.50)
+        self.assertEqual(select_banko([entry(i,{'1':(.70,1.6)}) for i in (1,2)]),[])
 
     def test_low_price_and_longshots_do_not_force_a_coupon(self):
         for odds in (1.08,3.5):

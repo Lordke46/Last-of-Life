@@ -31,3 +31,22 @@ test('price timing and matched market benchmark are labelled without promising p
  assert.match(html,/başarı sonucu çıkarılamaz/);
  assert.match(html,/1.40–1.79/);
 });
+
+test('engine comparison labels selected or candidate delta and strongest picks separately',()=>{
+ const context=vm.createContext({state:{leagues:[{id:'test',name:'Test Liga'}]},esc:s=>String(s),mrPct:p=>(p*100).toFixed(1)+'%'});
+ vm.runInContext(fs.readFileSync('static/model-report.js','utf8'),context);
+ context.engines={test:{fitted_weight:0,status:'incumbent_retained',training_matches:500,validation:{
+  '0.5':{n:100,delta_brier:-.003,blocks:10,upper95:-.001},'1.0':{n:100,delta_brier:.002,blocks:10,upper95:.004}}}};
+ const engine=vm.runInContext('ensembleReportHtml(engines)',context);
+ assert.match(engine,/Motor karşılaştırması/);
+ assert.match(engine,/yalnız geçmiş doğrulama desteklerse/);
+ assert.match(engine,/Test Liga/);
+ assert.match(engine,/Mevcut/);
+ assert.match(engine,/Aday −0\.0030/);
+ context.picks={summary:{n:7,hit_rate:.43,predicted_rate:.58}};
+ const picks=vm.runInContext('strongestPicksHtml(picks)',context);
+ assert.match(picks,/En yüksek olasılık seçeneği: kaydedilmiş sonuçlar/);
+ assert.match(picks,/43\.0%/);
+ assert.match(picks,/dengeli önerilerle aynı maçlarda örtüşebilir/);
+ assert.equal(vm.runInContext('strongestPicksHtml({summary:{n:0}})',context),'');
+});

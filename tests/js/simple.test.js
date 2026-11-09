@@ -17,6 +17,20 @@ test("server summary is rendered with 3-level badge and no jargon", () => {
   assert.doesNotMatch(html, /xG|EV|Kelly|Elo|lambda/i);
 });
 
+test("highest-probability view requires distinct backend-eligible iddaa pick", () => {
+  const match = {pick:{market:"1"}, strongest_pick:{market:"Ü1.5",p:.74,odds:1.5,
+    odds_source:"iddaa",policy:"highest_probability_v1"}};
+  const html = Simple.strongestPickBlock(match);
+  assert.match(html,/En yüksek olasılık/);
+  assert.match(html,/Üst/);
+  assert.match(html,/74%/);
+  assert.match(html,/iddaa 1\.50/);
+  assert.match(html,/Tahmini olasılık; garanti değil/);
+  assert.equal(Simple.strongestPickBlock({...match,strongest_pick:{...match.strongest_pick,market:"1"}}),"");
+  assert.equal(Simple.strongestPickBlock({...match,strongest_pick:{...match.strongest_pick,odds_source:"model"}}),"");
+  assert.equal(Simple.strongestPickBlock({...match,strongest_pick:{...match.strongest_pick,policy:"other"}}),"");
+});
+
 test('league list puts high, medium and low confidence before limited-data rows', () => {
   const m = (id, level, score, kickoff) => ({id, confidence:score, kickoff,
     summary:{market:'1',level}});

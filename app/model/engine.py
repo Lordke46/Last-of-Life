@@ -40,7 +40,7 @@ def _refresh_if_stale():
     if time.monotonic() - _stamp["checked"] < STAMP_TTL:
         return
     with session() as conn:
-        current = (get_meta(conn, "last_updated_at"), get_meta(conn, "update_data_version"))
+        current = (get_meta(conn, "last_updated_at"), get_meta(conn, "update_data_version"),get_meta(conn,"ensemble_updated_at"))
     with _lock:
         _stamp["checked"] = time.monotonic()
         if current != _stamp["value"]:
@@ -85,6 +85,8 @@ class LeagueModel:
         self.news = news
         self.all_history = done
         self.context = {}
+        self.fitted = None
+        self.ensemble_selection = None
         self.team_ids = {m[side]: str(m[side+'_id']) for m in (*done, *upcoming)
                          for side in ('home','away') if m.get(side+'_id')}
         self.elo = Elo()
@@ -155,8 +157,22 @@ class LeagueModel:
 
         lh, la = math.exp(log_h), math.exp(log_a)
         mat = P.score_matrix(lh, la)
+        ensemble_info = dict(self.ensemble_selection) if self.ensemble_selection else None
+        if ensemble_info:
+            ensemble_info['selected_fitted_weight']=ensemble_info['fitted_weight']
+            ensemble_info['fitted_weight']=0.0
+            ensemble_info['applied']=False
+        if not historical and self.fitted is not None and self.fitted.available(home,away):
+            from .ensemble import mix
+            weight = self.ensemble_selection['fitted_weight']
+            if weight:
+                ensemble_info.update(fitted_weight=weight,applied=True)
+                mat = mix(mat,self.fitted.matrix(home,away),weight)
+                # Matrix and displayed expected goals describe the same mixture.
+                lh = sum(i*v for i,row in enumerate(mat) for v in row)
+                la = sum(j*v for row in mat for j,v in enumerate(row))
         mk = P.markets(mat)
-        out = {"lambda_home": round(lh, 3), "lambda_away": round(la, 3), **mk}
+        out = {"lambda_home": round(lh, 3), "lambda_away": round(la, 3), "ensemble":ensemble_info if not historical else None, **mk}
         if not detail:
             return out
 
@@ -329,6 +345,13 @@ def get_model(league: str) -> LeagueModel:
             done, upcoming = _load(conn, league)
             news = news_scores(conn, league, datetime.now(timezone.utc))
         model = LeagueModel(league, done, upcoming, news)
+        from .ensemble import load_selection
+        from .fitted import FittedGoals
+        now = datetime.now(timezone.utc)
+        with session() as conn:
+            model.ensemble_selection = load_selection(conn,league,now)
+        if model.ensemble_selection['fitted_weight']:
+            model.fitted = FittedGoals(done,now)
     with session() as conn:
         attach_context(conn, model, league)
     with _lock:

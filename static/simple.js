@@ -83,5 +83,12 @@
     </div>${s.reason ? `<p class="pick-why">${esc(s.reason)}</p>` : ""}`;
   }
 
-  return { headline, title, info, levelBadge, oddsBox, pickBlock, confidenceLevel, sortMatches, filterMatches };
+  function strongestPickBlock(m) {
+    const pick = m?.strongest_pick, primary = m?.pick || m?.alternative;
+    if (!pick || pick.policy !== "highest_probability_v1" || !pick.market || pick.market === primary?.market
+        || !Number.isFinite(pick.p) || !Number.isFinite(pick.odds) || pick.odds_source !== "iddaa") return "";
+    return `<div class="pick-why"><b>En yüksek olasılık:</b> ${esc(headline(pick.market))} · ${(pick.p * 100).toFixed(0)}% · iddaa ${pick.odds.toFixed(2)}<br><span class="muted">Tahmini olasılık; garanti değil. Ana öneri dengeli seçimdir.</span></div>`;
+  }
+
+  return { headline, title, info, levelBadge, oddsBox, pickBlock, strongestPickBlock, confidenceLevel, sortMatches, filterMatches };
 });

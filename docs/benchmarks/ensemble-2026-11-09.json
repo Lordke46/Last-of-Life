@@ -1,0 +1,328 @@
+{
+  "evaluation_date": "2026-11-09",
+  "source": "https://github.com/openfootball/football.json",
+  "license": "CC0-1.0",
+  "external_repository": "https://github.com/jpmouracodex/football-mle",
+  "external_commit": "51494de7912e3b7135ed9491f07c937b9466ea44",
+  "leagues": {
+    "en.1": {
+      "scope": "held_out_next_season_rolling_origin",
+      "point_in_time_verified": false,
+      "note": "No historical quotes: unpriced top-choice hit rate is NOT iddaa recommendation performance or ROI.",
+      "train_n": 380,
+      "test_n": 380,
+      "from": "2025-08-15T00:00:00+00:00",
+      "to": "2026-05-24T00:00:00+00:00",
+      "adaptive_weights": {
+        "0.0": 349,
+        "0": 31
+      },
+      "results": {
+        "legacy": {
+          "n": 380,
+          "accuracy": 0.4868,
+          "brier": 0.6189,
+          "logloss": 1.0284,
+          "home_baseline": 0.4263,
+          "random_baseline": 0.3333,
+          "vs_home": 0.0605,
+          "vs_random": 0.1535,
+          "multi_market_brier": 0.212464,
+          "unpriced_top_probability_hit_rate": 0.7921,
+          "unpriced_top_probability_mean": 0.7968
+        },
+        "fitted": {
+          "n": 380,
+          "accuracy": 0.4684,
+          "brier": 0.6223,
+          "logloss": 1.0357,
+          "home_baseline": 0.4263,
+          "random_baseline": 0.3333,
+          "vs_home": 0.0421,
+          "vs_random": 0.1351,
+          "multi_market_brier": 0.214349,
+          "unpriced_top_probability_hit_rate": 0.7868,
+          "unpriced_top_probability_mean": 0.806
+        },
+        "adaptive": {
+          "n": 380,
+          "accuracy": 0.4868,
+          "brier": 0.6189,
+          "logloss": 1.0284,
+          "home_baseline": 0.4263,
+          "random_baseline": 0.3333,
+          "vs_home": 0.0605,
+          "vs_random": 0.1535,
+          "multi_market_brier": 0.212464,
+          "unpriced_top_probability_hit_rate": 0.7921,
+          "unpriced_top_probability_mean": 0.7968
+        },
+        "football_mle": {
+          "n": 380,
+          "accuracy": 0.4658,
+          "brier": 0.6231,
+          "logloss": 1.0369,
+          "home_baseline": 0.4263,
+          "random_baseline": 0.3333,
+          "vs_home": 0.0395,
+          "vs_random": 0.1325,
+          "multi_market_brier": 0.214971,
+          "unpriced_top_probability_hit_rate": 0.7842,
+          "unpriced_top_probability_mean": 0.814
+        }
+      },
+      "inputs": [
+        {
+          "url": "https://raw.githubusercontent.com/openfootball/football.json/master/2024-25/en.1.json",
+          "sha256": "c3d18f552d83382cd4b6b21127adbbfe38e7f8618ddc979fb5404f2df07d0a75"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/openfootball/football.json/master/2025-26/en.1.json",
+          "sha256": "d6070bdf731546ccf97767f062e8af4bd26dd309dee69f6092025bf9c78f43c1"
+        }
+      ]
+    },
+    "de.1": {
+      "scope": "held_out_next_season_rolling_origin",
+      "point_in_time_verified": false,
+      "note": "No historical quotes: unpriced top-choice hit rate is NOT iddaa recommendation performance or ROI.",
+      "train_n": 306,
+      "test_n": 306,
+      "from": "2025-08-22T00:00:00+00:00",
+      "to": "2026-05-16T00:00:00+00:00",
+      "adaptive_weights": {
+        "0.0": 269,
+        "0": 19,
+        "0.5": 18
+      },
+      "results": {
+        "legacy": {
+          "n": 306,
+          "accuracy": 0.549,
+          "brier": 0.5829,
+          "logloss": 0.9823,
+          "home_baseline": 0.4379,
+          "random_baseline": 0.3333,
+          "vs_home": 0.1111,
+          "vs_random": 0.2157,
+          "multi_market_brier": 0.204766,
+          "unpriced_top_probability_hit_rate": 0.8268,
+          "unpriced_top_probability_mean": 0.8349
+        },
+        "fitted": {
+          "n": 306,
+          "accuracy": 0.5294,
+          "brier": 0.5797,
+          "logloss": 0.9789,
+          "home_baseline": 0.4379,
+          "random_baseline": 0.3333,
+          "vs_home": 0.0915,
+          "vs_random": 0.1961,
+          "multi_market_brier": 0.205553,
+          "unpriced_top_probability_hit_rate": 0.7908,
+          "unpriced_top_probability_mean": 0.8364
+        },
+        "adaptive": {
+          "n": 306,
+          "accuracy": 0.549,
+          "brier": 0.583,
+          "logloss": 0.9824,
+          "home_baseline": 0.4379,
+          "random_baseline": 0.3333,
+          "vs_home": 0.1111,
+          "vs_random": 0.2157,
+          "multi_market_brier": 0.20507,
+          "unpriced_top_probability_hit_rate": 0.8268,
+          "unpriced_top_probability_mean": 0.8343
+        },
+        "football_mle": {
+          "n": 306,
+          "accuracy": 0.5327,
+          "brier": 0.5796,
+          "logloss": 0.9792,
+          "home_baseline": 0.4379,
+          "random_baseline": 0.3333,
+          "vs_home": 0.0948,
+          "vs_random": 0.1993,
+          "multi_market_brier": 0.20664,
+          "unpriced_top_probability_hit_rate": 0.7843,
+          "unpriced_top_probability_mean": 0.843
+        }
+      },
+      "inputs": [
+        {
+          "url": "https://raw.githubusercontent.com/openfootball/football.json/master/2024-25/de.1.json",
+          "sha256": "f473d6595e6c29ebedc08b09177aed6a6b2ff0fa8378b82f51dea469139f44c3"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/openfootball/football.json/master/2025-26/de.1.json",
+          "sha256": "17d0999db6281e6365823acdbce41a4f01dd469eac63e1f897e4e47c02906672"
+        }
+      ]
+    },
+    "es.1": {
+      "scope": "held_out_next_season_rolling_origin",
+      "point_in_time_verified": false,
+      "note": "No historical quotes: unpriced top-choice hit rate is NOT iddaa recommendation performance or ROI.",
+      "train_n": 370,
+      "test_n": 380,
+      "from": "2025-08-15T00:00:00+00:00",
+      "to": "2026-05-24T00:00:00+00:00",
+      "adaptive_weights": {
+        "0.0": 359,
+        "0": 21
+      },
+      "results": {
+        "legacy": {
+          "n": 380,
+          "accuracy": 0.5105,
+          "brier": 0.589,
+          "logloss": 0.9917,
+          "home_baseline": 0.4895,
+          "random_baseline": 0.3333,
+          "vs_home": 0.0211,
+          "vs_random": 0.1772,
+          "multi_market_brier": 0.205607,
+          "unpriced_top_probability_hit_rate": 0.8158,
+          "unpriced_top_probability_mean": 0.7969
+        },
+        "fitted": {
+          "n": 380,
+          "accuracy": 0.5132,
+          "brier": 0.5868,
+          "logloss": 0.9878,
+          "home_baseline": 0.4895,
+          "random_baseline": 0.3333,
+          "vs_home": 0.0237,
+          "vs_random": 0.1798,
+          "multi_market_brier": 0.205175,
+          "unpriced_top_probability_hit_rate": 0.8289,
+          "unpriced_top_probability_mean": 0.8227
+        },
+        "adaptive": {
+          "n": 380,
+          "accuracy": 0.5105,
+          "brier": 0.589,
+          "logloss": 0.9917,
+          "home_baseline": 0.4895,
+          "random_baseline": 0.3333,
+          "vs_home": 0.0211,
+          "vs_random": 0.1772,
+          "multi_market_brier": 0.205607,
+          "unpriced_top_probability_hit_rate": 0.8158,
+          "unpriced_top_probability_mean": 0.7969
+        },
+        "football_mle": {
+          "n": 380,
+          "accuracy": 0.5079,
+          "brier": 0.5894,
+          "logloss": 0.9909,
+          "home_baseline": 0.4895,
+          "random_baseline": 0.3333,
+          "vs_home": 0.0184,
+          "vs_random": 0.1746,
+          "multi_market_brier": 0.206166,
+          "unpriced_top_probability_hit_rate": 0.8132,
+          "unpriced_top_probability_mean": 0.8315
+        }
+      },
+      "inputs": [
+        {
+          "url": "https://raw.githubusercontent.com/openfootball/football.json/master/2024-25/es.1.json",
+          "sha256": "da5bfa1b3634e1039d9e71aec50bdc847f8761189e3de235a4e730e0dc64ca38"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/openfootball/football.json/master/2025-26/es.1.json",
+          "sha256": "b40397d8e62c640138548d57a1a9f76150549213d2a07fcbbb90ed0eabc6ccea"
+        }
+      ]
+    },
+    "tr.1": {
+      "scope": "held_out_next_season_rolling_origin",
+      "point_in_time_verified": false,
+      "note": "No historical quotes: unpriced top-choice hit rate is NOT iddaa recommendation performance or ROI.",
+      "train_n": 338,
+      "test_n": 99,
+      "from": "2025-08-08T00:00:00+00:00",
+      "to": "2025-11-03T00:00:00+00:00",
+      "adaptive_weights": {
+        "0.0": 75,
+        "0": 24
+      },
+      "results": {
+        "legacy": {
+          "n": 99,
+          "accuracy": 0.4949,
+          "brier": 0.5867,
+          "logloss": 0.9861,
+          "home_baseline": 0.3737,
+          "random_baseline": 0.3333,
+          "vs_home": 0.1212,
+          "vs_random": 0.1616,
+          "multi_market_brier": 0.213366,
+          "unpriced_top_probability_hit_rate": 0.7475,
+          "unpriced_top_probability_mean": 0.8008
+        },
+        "fitted": {
+          "n": 99,
+          "accuracy": 0.5152,
+          "brier": 0.5865,
+          "logloss": 0.9876,
+          "home_baseline": 0.3737,
+          "random_baseline": 0.3333,
+          "vs_home": 0.1414,
+          "vs_random": 0.1818,
+          "multi_market_brier": 0.216354,
+          "unpriced_top_probability_hit_rate": 0.7374,
+          "unpriced_top_probability_mean": 0.8127
+        },
+        "adaptive": {
+          "n": 99,
+          "accuracy": 0.4949,
+          "brier": 0.5867,
+          "logloss": 0.9861,
+          "home_baseline": 0.3737,
+          "random_baseline": 0.3333,
+          "vs_home": 0.1212,
+          "vs_random": 0.1616,
+          "multi_market_brier": 0.213366,
+          "unpriced_top_probability_hit_rate": 0.7475,
+          "unpriced_top_probability_mean": 0.8008
+        },
+        "football_mle": {
+          "n": 99,
+          "accuracy": 0.5152,
+          "brier": 0.587,
+          "logloss": 0.9904,
+          "home_baseline": 0.3737,
+          "random_baseline": 0.3333,
+          "vs_home": 0.1414,
+          "vs_random": 0.1818,
+          "multi_market_brier": 0.217618,
+          "unpriced_top_probability_hit_rate": 0.7374,
+          "unpriced_top_probability_mean": 0.8221
+        }
+      },
+      "inputs": [
+        {
+          "url": "https://raw.githubusercontent.com/openfootball/football.json/master/2024-25/tr.1.json",
+          "sha256": "6bfa0c16f87ea59ab79c60873ad3d3c0288e3198e4d6d0f56a2ebcb117e708c4"
+        },
+        {
+          "url": "https://raw.githubusercontent.com/openfootball/football.json/master/2025-26/tr.1.json",
+          "sha256": "31236abf06ccb59fdcdd7105138810157e3312faa29070ec9fbebf6f87c29ea2"
+        }
+      ]
+    }
+  },
+  "notes": [
+    "Date-only data conservatively excludes same-day results.",
+    "Turkey source has only 99 completed 2025/26 results; this is not a full-season test.",
+    "No iddaa odds in this CC0 dataset: no claims about tradable hit rate or ROI.",
+    "Candidate developed using 2023/24 -> 2024/25; later 2025/26 results were not used to tune weights globally.",
+    "Online selection and refits use only earlier results, not the scored fixture.",
+    "Fitted goals and external MLE are fallback-to-legacy hybrids for insufficient/new-team samples.",
+    "Reconstructed history lacks historical ingestion times, news and verified lineups.",
+    "No consistent out-of-sample superiority was established; do not force the challenger on all leagues."
+  ]
+}

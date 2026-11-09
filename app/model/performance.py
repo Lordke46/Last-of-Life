@@ -48,11 +48,11 @@ def _summarize(rows):
     }
 
 
-def report(conn, now=None):
+def report(conn, now=None, pick_field="pick"):
     now = now or datetime.now(timezone.utc)
     rows = conn.execute(
         "SELECT s.match_id, s.league, s.captured_at, s.kickoff, s.payload, "
-        "m.kickoff AS actual_kickoff, m.home_goals, m.away_goals "
+        "m.kickoff AS actual_kickoff, m.home_goals, m.away_goals, m.status "
         "FROM prediction_snapshots s JOIN matches m ON m.id=s.match_id "
         "WHERE m.completed=1 AND m.home_goals IS NOT NULL AND m.away_goals IS NOT NULL"
     ).fetchall()
@@ -62,10 +62,14 @@ def report(conn, now=None):
     picks = []
     for r in rows:
         try:
-            if not _ts(r["captured_at"]) < min(_ts(r["kickoff"]), _ts(r["actual_kickoff"])) < now:
+            captured,start,actual=map(_ts,(r['captured_at'],r['kickoff'],r['actual_kickoff']))
+            if any(t.tzinfo is None for t in (captured,start,actual)):
+                continue
+            if (not captured < min(start,actual) or max(start,actual)+timedelta(hours=3)>now
+                    or any(v in str(r['status'] or '').lower() for v in ('cancel','postpon','abandon','suspend'))):
                 continue
             data = json.loads(r["payload"])
-            pick = data.get("pick") or {}
+            pick = data.get(pick_field) or {}
             market = pick.get("market")
             odds = pick.get("odds")
             p = pick.get("p")
@@ -126,7 +130,7 @@ def report(conn, now=None):
                               "delta": round(model_brier - market_brier, 4) if paired else None,
                               "reliable": len(paired) >= MIN_RELIABLE_SAMPLES,
                               "note": "Aynı ilk kayıtlarda harmanlı seçim olasılığı ile marjı temizlenmiş piyasa olasılığının Brier karşılaştırması; düşük daha iyi."},
-        "scope": "first_recorded_prematch_iddaa_only", "min_reliable_samples": MIN_RELIABLE_SAMPLES,
+        "scope": "first_recorded_prematch_iddaa_only", "selection_field":pick_field, "min_reliable_samples": MIN_RELIABLE_SAMPLES,
         "summary": _summarize(picks), "segments": segments,
         "notes": "ROI seçim başına 1 birim sabit stake; yalnız ilk gerçek iddaa fiyatı ve sonuçlanan maçlar. "
                  "Örnek sayısı düşükse sonuç istatistiksel kanıt sayılmaz.",
