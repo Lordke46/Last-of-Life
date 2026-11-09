@@ -5,7 +5,7 @@ const vm=require('node:vm');
 const source=fs.readFileSync('static/app.js','utf8');
 const helpers=source.slice(source.indexOf('function resetMatchFilters()'),source.indexOf('function renderBulletinDays()'));
 test('opening view asks for main leagues, not the full bulletin',()=>{
- assert.match(source,/bulletinCategory:"main"/);
+ assert.match(source,/bulletinCategory:"all"/);
  assert.match(source,/state\.bulletinCategory="main"; state\.league=event\.target\.value === "all"/);
 });
 test('all date navigation resets stale high/live filters and updates the selected date',()=>{

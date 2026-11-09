@@ -14,7 +14,7 @@ if (!$("#bulletinDays")) {
 }
 const bulletinToday = () => new Date().toLocaleDateString("sv-SE", {timeZone:"Europe/Istanbul"});
 const matchFilters = {high:false, live:false};
-const state = {league:null, bulletinCategory:"main", bulletinDay:bulletinToday(), bulletinReq:0,
+const state = {league:null, bulletinCategory:"all", bulletinDay:bulletinToday(), bulletinReq:0,
   tab:"matches", leagues:[], couponDate:bulletinToday(), couponReq:0, matchReq:0, live:new Map()};
 
 function selectionResult(market, h, a, state) {
@@ -375,7 +375,7 @@ async function pollUpdate() {
   $("#btnUpdate").disabled = s.running;
   if (s.running) {  // başka biri (veya cron) güncelliyor
     bar.classList.remove("hidden");
-    bar.textContent = "Güncelleniyor: " + (s.message || "lütfen bekleyin");
+    bar.textContent = "Veriler arka planda güncelleniyor. Mevcut bülteni inceleyebilirsiniz." + (s.message ? " " + s.message : "");
     setTimeout(() => pollUpdate().catch(showLastUpdate), 3000);
   } else if (!bar.classList.contains("hidden")) {
     await showUpdateResult(s);
