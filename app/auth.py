@@ -357,7 +357,9 @@ def install(app):
     @app.middleware("http")
     async def _gate(request: Request, call_next):
         path = request.url.path
-        gated = auth_required() and (path == "/" or (path.startswith("/api/") and not path.startswith(PUBLIC_API)))
+        # This new namespace has its own mandatory bearer guard, even with AUTH_REQUIRED=0.
+        research = path == '/api/research' or path.startswith('/api/research/')
+        gated = not research and auth_required() and (path == "/" or (path.startswith("/api/") and not path.startswith(PUBLIC_API)))
         if gated and not await run_in_threadpool(current_user, request):
             if path == "/":
                 return RedirectResponse("/giris", status_code=302, headers={"Cache-Control": "private, no-store"})
