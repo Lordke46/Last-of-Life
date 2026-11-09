@@ -41,9 +41,9 @@ test("coupon groups display multiple alternatives under their type", () => {
     banko_alternatives: [coupon("banko"), coupon("banko", { picks: [pick({ home: "İkinci" })] })],
     surprise_alternatives: [coupon("surprise")],
   }, "banko", "b-good");
-  assert.match(html, /Dengeli \(Banko\) Kupon Alternatifleri/);
-  assert.match(html, /Dengeli \(Banko\) Kuponu 1/);
-  assert.match(html, /Dengeli \(Banko\) Kuponu 2/);
+  assert.match(html, /Banko tercihi · Dengeli Kupon Alternatifleri/);
+  assert.match(html, /Banko tercihi · Dengeli Kuponu 1/);
+  assert.match(html, /Banko tercihi · Dengeli Kuponu 2/);
   assert.doesNotMatch(html, /Sürpriz Kuponu/);
 });
 
@@ -77,7 +77,7 @@ test("legacy single coupons and a missing response retain a safe rendering path"
   assert.equal(CouponView.alternatives({ banko: coupon("banko") }, "banko").length, 1);
   assert.equal(CouponView.alternatives({ banko_alternatives: [], banko: coupon("banko") }, "banko").length, 1);
   const group = CouponView.couponGroup(undefined, "surprise", "b-warn");
-  assert.match(group, /Sürpriz türünde uygun kupon bulunamadı/);
+  assert.match(group, /Sürpriz için şu anda gösterilebilir alternatif yok/);
 });
 
 test('current alternatives take precedence while previously published coupons remain separate',()=>{
@@ -108,12 +108,24 @@ test('small league alternatives render and share as distinct market-only coupons
  const data={small_leagues:one,small_league_alternatives:[one,two]};
  assert.equal(CouponView.alternatives(data,'small_leagues').length,2);
  const html=CouponView.couponGroup(data,'small_leagues','b-info','2026-11-09');
- assert.match(html,/Piyasa verili küçük ligler/);
+ assert.match(html,/Piyasa verili küçük lig alternatifleri/);
  assert.match(html,/data-share-index="1"/);
  assert.match(html,/model güveni yok/);
 });
 
- test('empty modeled pool explains model scope without rejecting small leagues',()=>{
- assert.match(CouponView.emptyReason({matches:0},'banko'),/bağımsız takım modeli/);
- assert.match(CouponView.emptyReason({matches:0},'surprise'),/piyasa verili alternatifleri/);
+test('zero main-league matches does not hide valid small-league alternatives in the daily flow',()=>{
+ const small=coupon('banko',{selection_tier:'best_available',target_met:false,
+  picks:[pick({home:'Alt Lig A',away:'Alt Lig B',league_name:'Küçük Lig'})]});
+ const html=CouponView.couponGroup({matches:0,banko_alternatives:[small]},'banko','b-good');
+ assert.match(html,/Alt Lig A/);
+ assert.match(html,/en iyi mevcut alternatif gösteriliyor/);
+ assert.match(html,/Garanti değildir/);
+ assert.doesNotMatch(html,/bağımsız takım modeliyle değerlendirilmiş/);
+});
+
+test('target status distinguishes a candidate from a target-qualified coupon',()=>{
+ const data={selection_tier:'best_available',target_met:false,banko_alternatives:[coupon('banko')]};
+ assert.match(CouponView.couponGroup(data,'banko','b-good'),/Hedef koşullarına tam uyan kupon oluşmadı/);
+ data.target_met=true;
+ assert.match(CouponView.couponGroup(data,'banko','b-good'),/Tercih koşullarını karşıladı; sonuç garantisi değildir/);
  });

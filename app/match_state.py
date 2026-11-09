@@ -21,5 +21,6 @@ def describe(item, now=None):
     elif item.get('bulletin_present') is False or item.get('is_archived'):
         price='removed_from_bulletin'
     elif not fresh(item,now=now):price='unverified_or_stale'
+    elif (item.get('quote_provenance') or {}).get('last_fetch_status')=='failed':price='recent_observation'
     else:price='current'
-    return {'phase':phase,'price_status':price,'can_offer_prematch':phase=='prematch' and price=='current'}
+    return {'phase':phase,'price_status':price,'can_offer_prematch':phase=='prematch' and price in ('current','recent_observation')}

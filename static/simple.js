@@ -50,16 +50,24 @@
 
   /** Bir maç/öneri nesnesinden gösterilecek tek öneri. */
   function info(m) {
-    if (m.summary) return m.summary;
+    if (m.summary) {
+      const market = m.summary.market;
+      const marketPick = m.pick?.probability_source === "iddaa_market" || !!m.small_league;
+      const p = Number.isFinite(m.pick?.p) ? m.pick.p : Number.isFinite(m.markets?.[market]?.p) ? m.markets[market].p : null;
+      return { ...m.summary, p, odds: m.summary.odds ?? m.pick?.odds ?? m.iddaa_odds?.[market] ?? null,
+        selectionTier: m.pick?.selection_tier, targetMet: m.pick?.target_met,
+        pSource: p == null ? "" : marketPick ? "market" : "model" };
+    }
     const pick = m.pick || m.alternative;
     if (!pick) return { market: null, headline: "Veri bekleniyor", title: "Seçim hesabı için yeterli oran grubu veya model verisi yok", odds: null, level: 0, level_label: "", reason: "" };
     const small = !!m.small_league;
     return {
-      market: pick.market, headline: headline(pick.market), title: title(pick.market),
+      market: pick.market, headline: headline(pick.market), title: title(pick.market), p: pick.p ?? null,
       odds: pick.odds ?? m.iddaa_odds?.[pick.market] ?? null,
       level: small ? 0 : LEVELS[m.confidence_label] || 1, level_label: small ? "" : m.confidence_label || "",
       reason: small ? "Bu seçenek, marjı temizlenmiş iddaa piyasa olasılığına dayanır; takım modeli güveni değildir." : "",
       recommendation_label: small ? "Piyasa adayı" : "",
+      selectionTier: pick.selection_tier, targetMet: pick.target_met, pSource: small ? "market" : "model",
     };
   }
 
@@ -70,17 +78,20 @@
   }
 
   function oddsBox(odds) {
-    return `<div class="pick-odds"><small>iddaa oranı</small><b>${odds == null ? "–" : Number(odds).toFixed(2)}</b></div>`;
+    return `<div class="pick-odds"><small>Gerçek iddaa oranı</small><b>${odds == null ? "–" : Number(odds).toFixed(2)}</b></div>`;
   }
 
   /** Büyük öneri bloğu: [MS 2] Deplasman kazanır · güven · oran. */
   function pickBlock(m) {
     const s = info(m);
-    return `${s.recommendation_label && s.market ? `<div class="hero-label">${esc(s.recommendation_label)}</div>` : ""}<div class="pick-main">
+    const targetNote = s.targetMet === false || s.selectionTier === "best_available"
+      ? `<p class="v3-target-note">Hedef eşiği karşılanmadı; bu, mevcut verideki en uygun adaydır.</p>` : "";
+    const pSource = s.pSource === "market" ? "Piyasa olasılığı" : s.p != null ? "Model tahmini" : "";
+    return `<div class="v3-pick">${s.market ? `<div class="hero-label">Önerilen seçim</div>` : ""}<div class="pick-main">
       <span class="pick-chip${s.market ? "" : " none"}">${esc(s.headline)}</span>
-      <div class="pick-text"><b>${esc(s.title)}</b>${s.market ? levelBadge(s.level, s.level_label) : ""}</div>
+      <div class="pick-text"><b>${esc(s.title)}</b>${s.market ? `<span class="v3-probability">${s.p == null ? "Olasılık yok" : `${Math.round(s.p * 100)}% tahmini olasılık`}</span>${pSource ? `<small class="v3-p-source">${pSource}</small>` : ""}${levelBadge(s.level, s.level_label)}` : ""}</div>
       ${s.market ? oddsBox(s.odds) : ""}
-    </div>${s.reason ? `<p class="pick-why">${esc(s.reason)}</p>` : ""}`;
+    </div>${s.reason ? `<p class="pick-why">${esc(s.reason)}</p>` : ""}${targetNote}${s.market ? '<p class="v3-caveat">Tahmini olasılık; garanti değildir.</p>' : ""}</div>`;
   }
 
   function strongestPickBlock(m) {

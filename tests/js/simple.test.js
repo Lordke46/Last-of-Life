@@ -17,6 +17,24 @@ test("server summary is rendered with 3-level badge and no jargon", () => {
   assert.doesNotMatch(html, /xG|EV|Kelly|Elo|lambda/i);
 });
 
+test('primary choice surfaces estimated chance, actual odds, and best-available status',()=>{
+ const html=Simple.pickBlock({pick:{market:'1',p:.54,odds:1.82,selection_tier:'best_available',target_met:false},
+  iddaa_odds:{1:1.82},summary:{market:'1',headline:'MS 1',title:'Ev sahibi kazanır',odds:1.82,level:1,level_label:'Düşük',reason:'Kısa gerekçe.'}});
+ assert.match(html,/Önerilen seçim/);
+ assert.match(html,/54% tahmini olasılık/);
+ assert.match(html,/Gerçek iddaa oranı/);
+ assert.match(html,/Hedef eşiği karşılanmadı/);
+ assert.match(html,/Tahmini olasılık; garanti değildir/);
+});
+
+test('small-league market probability is labeled as market data, not model output',()=>{
+ const html=Simple.pickBlock({small_league:true,pick:{market:'Ü1.5',p:.63,odds:1.7,odds_source:'iddaa'},
+  summary:{market:'Ü1.5',headline:'1.5 Üst',title:'2 veya daha fazla gol',odds:1.7,level:0,level_label:'Piyasa verisi'}});
+ assert.match(html,/63% tahmini olasılık/);
+ assert.match(html,/Piyasa olasılığı/);
+ assert.doesNotMatch(html,/Model tahmini/);
+});
+
 test("highest-probability view requires distinct backend-eligible iddaa pick", () => {
   const match = {pick:{market:"1"}, strongest_pick:{market:"Ü1.5",p:.74,odds:1.5,
     odds_source:"iddaa",policy:"highest_probability_v1"}};

@@ -1,0 +1,57 @@
+{
+  "scope": "same_isolated_live_data_copy_not_accuracy_backtest",
+  "day": "2026-11-09",
+  "baseline": {
+    "matches": 0,
+    "banko_alternatives": 0,
+    "surprise_alternatives": 0,
+    "banko": [],
+    "surprise": []
+  },
+  "v3": {
+    "matches": 36,
+    "banko_alternatives": 3,
+    "surprise_alternatives": 3,
+    "banko": [
+      {
+        "picks": 1,
+        "odds": 1.15,
+        "probability": 0.7655,
+        "target_met": false
+      },
+      {
+        "picks": 1,
+        "odds": 1.92,
+        "probability": 0.4514,
+        "target_met": false
+      },
+      {
+        "picks": 1,
+        "odds": 2.04,
+        "probability": 0.4254,
+        "target_met": false
+      }
+    ],
+    "surprise": [
+      {
+        "picks": 3,
+        "odds": 8.11,
+        "probability": 0.0778,
+        "target_met": true
+      },
+      {
+        "picks": 3,
+        "odds": 8.46,
+        "probability": 0.0774,
+        "target_met": true
+      },
+      {
+        "picks": 3,
+        "odds": 8.15,
+        "probability": 0.0773,
+        "target_met": true
+      }
+    ]
+  },
+  "note": "Actual observed prices/provenance from isolated copy; no user data. Availability comparison, not proof of future profit."
+}

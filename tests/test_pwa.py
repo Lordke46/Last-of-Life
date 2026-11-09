@@ -36,7 +36,7 @@ class ManifestTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(headers["content-type"].startswith("application/manifest+json"))
         self.assertEqual(headers["cache-control"], "no-cache")
-        self.assertEqual(json.loads(body)["name"], "İddia Oran")
+        self.assertEqual(json.loads(body)["name"], "Last of Life V3")
 
     def test_installability_fields(self):
         m = pwa.MANIFEST

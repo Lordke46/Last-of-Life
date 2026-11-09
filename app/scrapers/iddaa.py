@@ -390,13 +390,14 @@ def match_event(event: dict, fixtures: list[dict]) -> tuple[dict | None, float]:
     return candidates[0][1], round(candidates[0][0], 3)
 
 
-def enrich_events(raw_events: list[dict], budget_seconds: float = 20) -> dict:
+def enrich_events(raw_events: list[dict], budget_seconds: float = 20, request_timeout: int = 6,
+                 wait_for_workers: bool = False) -> dict:
     """Özet bültende olmayan pazarları tam maç detayından al; DB yalnız ana iş parçacığında yazılır."""
     candidates = sorted(raw_events, key=lambda e: (e.get('ci') not in COMPETITION_IDS, e.get('d', 0)))
     # Büyük bültenlerde hızlı güncelleme süresi sınırlı kalır; kapsam yanıt istatistiğinde görünür.
     candidates = candidates[:400]
     def fetch(event):
-        response = fetch_json(f"https://sportsbookv2.iddaa.com/sportsbook/event/{event['i']}", timeout=6, retries=1)
+        response = fetch_json(f"https://sportsbookv2.iddaa.com/sportsbook/event/{event['i']}", timeout=request_timeout, retries=1)
         data = response['data']
         for market in data.get('m') or []:
             market['_transport'] = response.get('_transport', {})
@@ -425,13 +426,15 @@ def enrich_events(raw_events: list[dict], budget_seconds: float = 20) -> dict:
     except FuturesTimeout:
         pass
     finally:
-        pool.shutdown(wait=False, cancel_futures=True)
+        pool.shutdown(wait=wait_for_workers, cancel_futures=True)
     return {'detail_requested': len(candidates), 'detail_loaded': loaded,
             'detail_failed': failed, 'detail_skipped': len(raw_events)-loaded-failed}
 
 
-def _sync_odds(conn, progress=None, retries: int = 3) -> dict:
-    payload = fetch_json(retries=retries)
+def _sync_odds(conn, progress=None, retries: int = 3, transport_timeout: int | None = None,
+               detail_budget_seconds: float | None = None, catalog_timeout: int | None = None) -> dict:
+    payload = (fetch_json(retries=retries) if transport_timeout is None else
+               fetch_json(timeout=transport_timeout, retries=retries))
     if payload.get('data', {}).get('isdiff'):
         raise RuntimeError('Tam bülten yerine artımlı yanıt alındı; önceki oranlar korundu')
     raw_events = payload["data"].get("events", [])
@@ -439,16 +442,27 @@ def _sync_odds(conn, progress=None, retries: int = 3) -> dict:
         raise RuntimeError('Boş/geçersiz bülten; önceki oranlar korundu')
     for event in raw_events:
         event['_transport'] = payload.get('_transport', {})
-    detail_stats = enrich_events(raw_events)
+    if detail_budget_seconds is None:
+        detail_stats = enrich_events(raw_events)
+    else:
+        detail_stats = enrich_events(raw_events, budget_seconds=detail_budget_seconds,
+                                     request_timeout=transport_timeout or 6, wait_for_workers=True)
     try:
-        catalog = fetch_competitions()
+        catalog = fetch_competitions() if catalog_timeout is None else fetch_competitions(timeout=catalog_timeout)
     except Exception:
         catalog = {}
+    # A short catalog timeout must not rename known small leagues to "Lig <id>".
+    previous_labels = {str(row['competition_id']): dict(row) for row in conn.execute(
+        "SELECT competition_id, league_name, country FROM iddaa_events"
+    ).fetchall()}
     for raw in raw_events:
         competition = catalog.get(int(raw["ci"])) if raw.get("ci") is not None else None
         if competition:
             raw.setdefault("competitionName", competition.get("n") or competition.get("sn"))
             raw.setdefault("countryName", competition.get("cid"))
+        elif (previous := previous_labels.get(str(raw.get('ci')))):
+            raw.setdefault("competitionName", previous['league_name'])
+            raw.setdefault("countryName", previous['country'])
     events = [parsed for raw in raw_events if (parsed := parse_event(raw))]
     if not events:
         raise RuntimeError('Bültenden geçerli futbol maçı ayrıştırılamadı; önceki oranlar korundu')
@@ -564,9 +578,10 @@ def load_constraints(conn):
         return {}
 
 
-def sync_odds(conn, progress=None, retries: int = 3):
+def sync_odds(conn, progress=None, retries: int = 3, transport_timeout: int | None = None,
+              detail_budget_seconds: float | None = None, catalog_timeout: int | None = None):
     try:
-        return _sync_odds(conn, progress, retries)
+        return _sync_odds(conn, progress, retries, transport_timeout, detail_budget_seconds, catalog_timeout)
     except Exception as exc:
         quote_provenance.failed(conn, exc)
         raise

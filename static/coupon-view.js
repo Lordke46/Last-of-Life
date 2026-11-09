@@ -38,18 +38,18 @@
     coupon = coupon && typeof coupon === "object" ? coupon : {};
     const picks = Array.isArray(coupon.picks) ? coupon.picks.filter((pick) => pick && typeof pick === "object") : [];
     const rows = picks.map((pick) => `<tr>
-      <td class="l"><b>${esc(pick.home || "Takım bilgisi yok")}</b> – ${esc(pick.away || "Takım bilgisi yok")}</td>
-      <td>${esc(pick.league_name || pick.league || "-")}</td>
-      <td>${esc(pickTime(pick.kickoff))}</td>
-      <td><span class="badge b-info">${esc({"1X":"ÇŞ 1–0","X2":"ÇŞ 0–2","12":"ÇŞ 1–2"}[pick.market] || pick.market || "-")}</span></td>
-      <td>${odds(pick)}</td>
-      <td>${probability(pick.p)}</td>
+      <td class="l" data-label="Maç"><b>${esc(pick.home || "Takım bilgisi yok")}</b> – ${esc(pick.away || "Takım bilgisi yok")}</td>
+      <td data-label="Lig">${esc(pick.league_name || pick.league || "-")}</td>
+      <td data-label="Saat">${esc(pickTime(pick.kickoff))}</td>
+      <td data-label="Seçim"><span class="badge b-info">${esc({"1X":"ÇŞ 1–0","X2":"ÇŞ 0–2","12":"ÇŞ 1–2"}[pick.market] || pick.market || "-")}</span></td>
+      <td data-label="Oran">${odds(pick)}</td>
+      <td data-label="Olasılık">${probability(pick.p)}${pick.probability_source === "iddaa_market" ? "<small> · Piyasa</small>" : ""}</td>
     </tr>`).join("");
     const content = picks.length
       ? `<table><thead><tr><th class="l">Maç</th><th>Lig</th><th>Saat</th><th>Seçim</th><th>Oran</th><th>Olasılık</th></tr></thead><tbody>${rows}</tbody></table>`
       : `<p class="muted">Bu kupon için uygun maç bulunamadı.</p>`;
     const totals = picks.length
-      ? `<div class="coupon-total"><b>Toplam oran:</b> ${esc(displayNumber(coupon.total_odds))} · <b>Toplam tahmini olasılık:</b> ${probability(coupon.total_probability)}<br><span class="muted">${esc(coupon.stake_note || "")}</span></div>`
+      ? `<div class="coupon-total"><b>Toplam oran:</b> ${esc(displayNumber(coupon.total_odds))} · <b>Toplam tahmini olasılık:</b> ${probability(coupon.total_probability)}${coupon.stake_note ? `<details class="coupon-method"><summary>Seçim yöntemi</summary><p class="muted">${esc(coupon.stake_note)}</p></details>` : ""}</div>`
       : "";
     const shareActions = picks.length && share
       ? `<div class="coupon-share-actions"><button type="button" class="btn" data-share-coupon data-share-type="${esc(share.kind)}" data-share-index="${share.index}">Paylaş</button><select aria-label="Görsel boyutu" data-share-size><option value="square">Kare 1080×1080</option><option value="story">Story 1080×1920</option></select></div>`
@@ -59,7 +59,17 @@
     const publication = coupon.publication === "published"
       ? `<p class="muted">Günün yayımlanan kuponu. Geçmiş ve Telegram bu kuponu kullanır; oranlar yayımlandığı andaki değerlerdir. Başlamış maçlar yeniden oynanamaz.</p>`
       : coupon.publication === "live" ? `<p class="muted">Güncel alternatif · günün kayıtlı kuponundan farklı olabilir.</p>` : "";
-    return `<div class="card coupon-card"><div class="row-between"><h3>${esc(title)}</h3><span>${source(coupon, picks)} <span class="badge ${esc(badgeClass)}">${picks.length} maç</span></span></div>${publication}${calibrationNote}${content}${totals}${shareActions}</div>`;
+    const tier = coupon.selection_tier || coupon.metadata?.selection_tier || share?.selectionTier;
+    const targetMet = coupon.target_met ?? coupon.metadata?.target_met ?? share?.targetMet;
+    const tierLabel = tier === "preferred" ? (coupon.type === "surprise" ? "Sürpriz hedefi sağlandı" : "Banko hedefi sağlandı") : tier === "banko" || tier === "balanced" ? "Banko tercihi · dengeli" : tier === "surprise" ? "Sürpriz tercihi" : "Günün en uygun mevcut alternatifi";
+    const targetNote = targetMet === true
+      ? "Tercih koşullarını karşıladı; sonuç garantisi değildir."
+      : targetMet === false
+        ? "Hedef koşullarına tam uyan kupon oluşmadı; en iyi mevcut alternatif gösteriliyor. Garanti değildir."
+        : "Tercih, mevcut maç ve oran verilerine göre oluşturuldu; garanti değildir.";
+    const selectionNote = picks.length
+      ? `<p class="coupon-selection-note"><b>${esc(tierLabel)}.</b> ${esc(targetNote)}</p>` : "";
+    return `<div class="card coupon-card"><div class="row-between"><h3>${esc(title)}</h3><span>${source(coupon, picks)} <span class="badge ${esc(badgeClass)}">${picks.length} maç</span></span></div>${selectionNote}${publication}${calibrationNote}${content}${totals}${shareActions}</div>`;
   }
 
   function alternatives(data, type) {
@@ -78,9 +88,6 @@
     const label = type === "small_leagues" ? "Piyasa verili küçük ligler" : type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
     const diag = data && typeof data === "object" ? data[`${type}_diagnostics`] || {} : {};
     const lines = [];
-    if (type !== "small_leagues" && data && Number(data.matches) === 0) {
-      return "Bu gün bağımsız takım modeliyle değerlendirilmiş, henüz başlamamış ana lig maçı yok. Küçük liglerin piyasa verili alternatifleri aşağıda gösterilir.";
-    }
     if (diag.stale_odds) {
       const age = Number(diag.odds_age_minutes);
       const when = Number.isFinite(age) ? `Oranlar ${Math.trunc(age)} dk önce alındı. ` : "";
@@ -95,15 +102,20 @@
       const need = Number.isFinite(Number(diag.calibration_min_samples)) ? Math.trunc(Number(diag.calibration_min_samples)) : 30;
       lines.push(`Banko için aynı lig, pazar ve olasılık diliminde en az ${need} sonuçlanmış kayıt gerekir. En dolu dilim ${best}/${need}.`);
     }
-    if (!lines.length) lines.push(`${label} türünde uygun kupon bulunamadı.`);
+    if (!lines.length && data && (data.selection_tier || data.target_met !== undefined)) {
+      lines.push(data.target_met === false
+        ? "Hedef koşullarına tam uyan kupon oluşmadı; seçilebilir maç ve oranlar içindeki en iyi alternatif gösteriliyor."
+        : "Günün en uygun mevcut alternatifi bulunamadı.");
+    }
+    if (!lines.length) lines.push(`${label} için şu anda gösterilebilir alternatif yok.`);
     return lines.join(" ");
   }
 
   function couponGroup(data, type, badgeClass, date) {
-    const label = type === "small_leagues" ? "Piyasa verili küçük ligler" : type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
+    const label = type === "small_leagues" ? "Piyasa verili küçük lig alternatifleri" : type === "surprise" ? "Sürpriz tercihi" : "Banko tercihi · Dengeli";
     const coupons = alternatives(data, type);
     const content = coupons.length
-      ? coupons.map((coupon, index) => couponCard(coupon, `${label} Kuponu ${index + 1}`, badgeClass, { kind: type, index, date })).join("")
+      ? coupons.map((coupon, index) => couponCard(coupon, `${label} Kuponu ${index + 1}`, badgeClass, { kind: type, index, date, selectionTier: data?.selection_tier, targetMet: data?.target_met })).join("")
       : `<div class="card muted">${esc(emptyReason(data, type))}</div>`;
     return `<section class="coupon-group"><h3>${label} Kupon Alternatifleri</h3>${content}</section>`;
   }

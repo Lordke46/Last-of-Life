@@ -182,7 +182,7 @@ def summarize(item: dict) -> dict:
     market=selected['market'];probability=selected.get('p')
     chance=f"Tahmini olasılık %{probability*100:.0f}. " if probability is not None else ''
     odd=selected.get('odds')
-    if item.get('small_league'):
+    if item.get('small_league') or selected.get('probability_source')=='iddaa_market':
         status=selected.get('candidate_status')
         note='1,40–2,30 bandı dışında; ' if status=='outside_band' else ''
         return summary(market,title(market),f"{note}Marjı temizlenmiş iddaa piyasa olasılığı %{probability*100:.0f}; takım modeli güveni değildir.",
@@ -196,6 +196,8 @@ def summarize(item: dict) -> dict:
         return summary(market,title(market),chance+'1,40–2,30 oran bandı dışında; yalnız alternatif olarak gösteriliyor.',label='Oran bandı dışı',odd=odd)
     label=item.get('confidence_label') or 'Düşük'
     explanation=reason(item)
+    if pick.get('policy')=='best_available_v3':
+        explanation+=' Mevcut güncel seçenekler içindeki seçimdir; tercih edilen olasılık veya oran hedefine ulaşmıyor.'
     if pick.get('policy')=='balanced_v2':
         explanation+=' Seçim, 1,40–2,30 gerçek oran bandındaki seçeneklerden tahmini tutma ihtimali en yüksek olana göre yapılır.'
     return {'market':market,'headline':headline(market),'title':title(market,item['home'],item['away']),

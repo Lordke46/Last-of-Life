@@ -1,5 +1,5 @@
 /* İddia Oran service worker. /sw.js olarak sunulur (kapsam "/"); __VERSION__ ve __PRECACHE__ app/pwa.py'de doldurulur.
-   - Statik dosyalar + uygulama kabuğu ("/"): cache-first, önbellek adı sürümlü (static dosyalar değişince sürüm değişir).
+   - Statik dosyalar: cache-first; uygulama kabuğu ("/"): network-first, önbellek adı sürümlü (static dosyalar değişince sürüm değişir).
    - /api (GET): network-first; ağ yok/yavaş/5xx ise son kaydedilen yanıt döner ve sayfaya "sw-cache-hit" mesajı gider.
    - Takım logoları (ESPN CDN): cache-first. */
 const VERSION = "__VERSION__";
@@ -74,7 +74,19 @@ async function staticCacheFirst(req) {
 async function appShell(req) {
   if (AUTH_REQUIRED) return fetch(req); // oturum kapısını çevrimdışı kabukla atlama
   const cache = await caches.open(STATIC_CACHE);
-  return (await cache.match("/")) || fetch(req);
+  try {
+    const response = await fetch(new Request(req, {cache:"no-cache"}));
+    if (response.ok) {
+      await cache.put("/",response.clone());
+      return response;
+    }
+    const cached = await cache.match("/");
+    return cached || response;
+  } catch (error) {
+    const cached = await cache.match("/");
+    if (cached) return cached;
+    throw error;
+  }
 }
 
 async function trim(cache, max) {

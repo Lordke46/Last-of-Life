@@ -117,7 +117,7 @@ ELİMDEKİ MAÇ VERİLERİ (JSON; yüzdeler ayrıca belirtilmedikçe olasılıkl
       <div id="matchPromptOutput" data-prompt-output hidden><label>Maça özel analiz promptu<textarea readonly rows="12" spellcheck="false" data-prompt-text></textarea></label>
       <div class="prompt-actions"><button type="button" class="btn" data-copy-prompt>Promptu kopyala</button></div>
       <p class="muted small" role="status" data-prompt-status></p></div>`;
-    const anchor = container.querySelector('.mhead');
+    const anchor = container.querySelector('.card.hero') || container.querySelector('.mhead');
     if (anchor) anchor.insertAdjacentElement('afterend', section); else container.appendChild(section);
     const generate = section.querySelector('[data-generate-prompt]'), output = section.querySelector('[data-prompt-output]');
     const area = section.querySelector('[data-prompt-text]'), status = section.querySelector('[data-prompt-status]');
