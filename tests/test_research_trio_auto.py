@@ -61,3 +61,28 @@ def test_auto_uses_existing_planner_and_guarded_enqueue():
     assert result['selected'] == 3
     assert enqueue.call_count == 3
     assert all(call.args[2] == 'full' for call in enqueue.call_args_list)
+
+
+
+def test_research_fallback_when_no_trio_meets_target():
+    entries = [entry(1, 1.3, .85), entry(2, 1.3, .80),
+               entry(3, 1.3, .75), entry(4, 1.3, .70)]
+    picks, mode = research_auto._research_picks(entries, NOW)
+    assert mode == 'research_fallback'
+    assert [p['id'] for p in picks] == ['1', '2', '3']
+
+
+def test_research_fallback_ignores_duplicate_and_unpriced_matches():
+    entries = [entry(1, 1.3, .8), entry(1, 1.3, .9),
+               entry(2, 1.3, .7), entry(3, 1.3, .6)]
+    entries[2][1][0]['odds_source'] = 'claude'
+    picks, mode = research_auto._research_picks(entries, NOW)
+    assert mode == 'research_fallback'
+    assert [p['id'] for p in picks] == ['1', '3']
+
+
+def test_research_prefers_target_trio():
+    picks, mode = research_auto._research_picks(
+        [entry(1), entry(2), entry(3)], NOW)
+    assert mode == 'priced_trio'
+    assert len(picks) == 3
