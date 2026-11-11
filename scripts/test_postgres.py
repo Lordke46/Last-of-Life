@@ -22,7 +22,8 @@ with psycopg.connect(url, row_factory=dict_row, prepare_threshold=None) as raw:
     conn = Connection(raw, True)
     for path in files:
         conn.executescript(path.read_text())
-    repair = files[-1].read_text()
+    # A newer additive migration must not replace the legacy schema-repair fixture.
+    repair = next(p for p in files if p.name == '20261024000000_reconcile_and_predictions.sql').read_text()
     conn.executescript(repair)
     # Legacy duplicate-version case: recorded migration did not install auth/news.
     conn.execute('DROP TABLE public.sessions,public.password_resets,public.users CASCADE')
@@ -60,3 +61,5 @@ with patch.object(db,'DATABASE_URL',url):
     recommendation_history.decorate([sample])
     assert sample['prematch_recommendation']['pick']['odds']==1.8
 print('PostgreSQL migrations, idempotent repair, lease and recommendation-history SQL passed')
+from research_postgres_check import verify as verify_research
+verify_research(url)

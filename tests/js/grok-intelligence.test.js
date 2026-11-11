@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');
+const gi=require('../../static/grok-intelligence.js');
+const payload={revision:1,mode:'full',researched_at:'2026-11-10T23:00:00Z',context:{snapshot_missing:true,quote_freshness:'stale'},report:{sources:[{id:'s',url:'javascript:alert(1)',publisher:'<script>',published_date:null,accessed_at:'2026-11-10T23:00:00Z'}],findings:[{category:'other',original_status:'conflicting',verification_status:'conflicting',statement:'<img src=x onerror=alert(1)>',source_ids:['s'],skill_details:{original_category:'absence',conflict_note:'Çelişki'}},{category:'other',statement:'Skill alanı: model_prior',verification_status:'unknown',source_ids:[],skill_details:{field:'model_prior',value:[{comparison:'disagree'}]}}],lineup_assessment:{lineup_status:'unknown'},limitations:[]}};
+const html=gi.view(payload);
+assert.match(html,/1 özgün bulgu/);assert.match(html,/türetilen kayıtlar \(1\)/);assert.match(html,/Çelişkili/);assert.match(html,/yayın: bilinmiyor/);assert.match(html,/model snapshotı bulunmuyor/);assert.match(html,/oranlar eski/);assert.doesNotMatch(html,/<script>|<img src=x|href="javascript:/);assert.equal(gi.safeUrl('javascript:alert(1)'),'');
+console.log('grok intelligence rendering OK');
+const missing=JSON.parse(JSON.stringify(payload)); missing.report.sources=[]; missing.report.findings[0].source_ids=['missing'];
+assert.match(gi.view(missing),/Bağlı kaynak yok/);
+const staleRisk = gi.view({researched_at:'2000-01-01T00:00:00Z',freshness_status:'current',mode:'full',revision:1,context:{},report:{findings:[{category:'injury',statement:'Sakatlık iddiası',verification_status:'unknown'}]}});
+assert.match(staleRisk, /Araştırma eski veya güncelliği bilinmiyor/);
+assert.match(staleRisk, /Risk olarak incelenecek iddialar/);
+assert.match(staleRisk, /Sakatlık iddiası/);

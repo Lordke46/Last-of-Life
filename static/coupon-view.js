@@ -61,7 +61,7 @@
       : coupon.publication === "live" ? `<p class="muted">Güncel alternatif · günün kayıtlı kuponundan farklı olabilir.</p>` : "";
     const tier = coupon.selection_tier || coupon.metadata?.selection_tier || share?.selectionTier;
     const targetMet = coupon.target_met ?? coupon.metadata?.target_met ?? share?.targetMet;
-    const tierLabel = tier === "preferred" ? (coupon.type === "surprise" ? "Sürpriz hedefi sağlandı" : "Banko hedefi sağlandı") : tier === "banko" || tier === "balanced" ? "Banko tercihi · dengeli" : tier === "surprise" ? "Sürpriz tercihi" : "Günün en uygun mevcut alternatifi";
+    const tierLabel = tier === "trio" ? "Üçlü hedefi sağlandı" : tier === "preferred" ? (coupon.type === "surprise" ? "Sürpriz hedefi sağlandı" : "Banko hedefi sağlandı") : tier === "banko" || tier === "balanced" ? "Banko tercihi · dengeli" : tier === "surprise" ? "Sürpriz tercihi" : "Günün en uygun mevcut alternatifi";
     const targetNote = targetMet === true
       ? "Tercih koşullarını karşıladı; sonuç garantisi değildir."
       : targetMet === false
@@ -69,7 +69,8 @@
         : "Tercih, mevcut maç ve oran verilerine göre oluşturuldu; garanti değildir.";
     const selectionNote = picks.length
       ? `<p class="coupon-selection-note"><b>${esc(tierLabel)}.</b> ${esc(targetNote)}</p>` : "";
-    return `<div class="card coupon-card"><div class="row-between"><h3>${esc(title)}</h3><span>${source(coupon, picks)} <span class="badge ${esc(badgeClass)}">${picks.length} maç</span></span></div>${selectionNote}${publication}${calibrationNote}${content}${totals}${shareActions}</div>`;
+    const research = coupon.type === "trio" && picks.length ? `<div class="coupon-research"><p class="muted">Grok bulguları ayrı risk bilgisidir; seçim olasılıkları değişmez. Araştırma iddiaları ayrıca doğrulanmalıdır.</p>${picks.map(pick => `<div data-grok-coupon-match="${esc(pick.id)}"><b>${esc(pick.home)} – ${esc(pick.away)}</b></div>`).join("")}</div>` : "";
+    return `<div class="card coupon-card"><div class="row-between"><h3>${esc(title)}</h3><span>${source(coupon, picks)} <span class="badge ${esc(badgeClass)}">${picks.length} maç</span></span></div>${selectionNote}${publication}${calibrationNote}${content}${totals}${research}${shareActions}</div>`;
   }
 
   function alternatives(data, type) {

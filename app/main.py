@@ -26,6 +26,8 @@ from .value_bets import router as value_bets_router
 from .seo import router as seo_router
 from .results_api import router as results_router
 from .bulletin_api import router as bulletin_router
+from .research_api import router as research_router
+from .grok_intelligence_api import router as grok_intelligence_router
 
 AUTO_UPDATE_HOURS = 6
 UPDATE_PER_MINUTE = 5
@@ -54,6 +56,8 @@ app.include_router(model_report_router)
 app.include_router(value_bets_router)
 app.include_router(results_router)
 app.include_router(bulletin_router)
+app.include_router(research_router)
+app.include_router(grok_intelligence_router)
 
 
 def _check_league(league: str):
