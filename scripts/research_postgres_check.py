@@ -31,10 +31,16 @@ def verify(url):
         conn.execute("DO $$ BEGIN IF NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='research_pilot_login') THEN "
                      "CREATE ROLE research_pilot_login LOGIN INHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS; END IF; END $$")
         conn.execute('GRANT lol_research_runtime TO research_pilot_login')
-        conn.execute('TRUNCATE ai_research.report_revisions,ai_research.reports,ai_research.jobs,ai_research.service_keys,ai_research.rate_limits')
+        # Disposable test DB only. DELETE avoids cascading into append-only evaluation tables.
+        for table in ('report_revisions','reports','jobs','service_keys','rate_limits','rerun_approvals','match_aliases','match_identities'):
+            conn.execute('DELETE FROM ai_research.'+table)
         conn.execute('INSERT INTO public.matches(id,league,kickoff,home,away) VALUES(?,?,?,?,?) '
                      'ON CONFLICT(id) DO UPDATE SET kickoff=excluded.kickoff',
                      ('research-pg-match', 'eng.1', (at+timedelta(hours=6)).isoformat(), 'Home', 'Away'))
+        conn.execute('INSERT INTO ai_research.match_identities(canonical_id,competition,home,away,kickoff,reviewed_by,review_reason) VALUES(?,?,?,?,?,?,?)',
+                     ('research-pg-canonical','eng.1','Home','Away',(at+timedelta(hours=6)).isoformat(),'test-operator','synthetic mapping'))
+        conn.execute('INSERT INTO ai_research.match_aliases(alias,canonical_id,provider,source_competition,source_home,source_away,source_kickoff,reviewed_by,review_reason) VALUES(?,?,?,?,?,?,?,?,?)',
+                     ('research-pg-match','research-pg-canonical','test','eng.1','Home','Away',(at+timedelta(hours=6)).isoformat(),'test-operator','synthetic mapping'))
         conn.execute('INSERT INTO ai_research.service_keys(key_id,principal_id,token_hash,scopes,expires_at,created_at) VALUES(?,?,?,?,?,?)',
                      ('pg_test', 'pg-grok', service.sha(key), json.dumps(sorted(service.SCOPES)),
                       (at+timedelta(days=1)).isoformat(), at.isoformat()))

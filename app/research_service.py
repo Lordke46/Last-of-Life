@@ -94,15 +94,51 @@ def job_view(job, at):
         'status': 'expired' if expired else job['status'], 'lease_expires_at': job['lease_expires_at']}
 
 
-def enqueue(owner, match_id, mode, deadline, request_id='initial'):
+def _assert_guarded_backend():
+    # SQLite pilot storage lacks the PostgreSQL identity/quota triggers.
+    if not store.postgres():
+        raise HTTPException(503, {'code':'RESEARCH_QUEUE_POSTGRES_REQUIRED'})
+
+
+def enqueue(owner, match_id, mode, deadline, request_id='initial', *, rerun_approval_id=None):
+    _assert_guarded_backend()
+    try:
+        return _enqueue(owner, match_id, mode, deadline, request_id, rerun_approval_id)
+    except Exception as exc:
+        try:
+            import psycopg
+            is_guard = isinstance(exc, psycopg.errors.RaiseException)
+        except ImportError:
+            is_guard = False
+        code = getattr(getattr(exc, 'diag', None), 'message_primary', None)
+        allowed = {'RESEARCH_IDENTITY_UNVERIFIED','RESEARCH_CONTEXT_INVALID','RESEARCH_IDENTITY_MISMATCH',
+                   'RESEARCH_MATCH_NOT_UPCOMING','RESEARCH_IDENTITY_BACKFILL_REQUIRED',
+                   'RESEARCH_REPEAT_APPROVAL_REQUIRED','RESEARCH_DAILY_QUOTA_EXCEEDED','RESEARCH_ISOLATION_UNSUPPORTED',
+                   'RESEARCH_IDEMPOTENCY_CONFLICT','RESEARCH_APPROVAL_NOT_APPLICABLE'}
+        if is_guard and code in allowed:
+            raise HTTPException(409, {'code':code}) from None
+        raise
+
+
+def _enqueue(owner, match_id, mode, deadline, request_id, rerun_approval_id):
     if mode not in ('full', 'lineup_check'):
         raise ValueError('Unsupported research mode')
     if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,100}', request_id):
         raise ValueError('Invalid request ID')
+    if rerun_approval_id is not None and (not store.postgres() or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,100}',rerun_approval_id)):
+        raise ValueError('A PostgreSQL operator approval is required')
     at = now()
     end = timestamp(deadline)
     with store.session() as conn:
         _transaction_lock(conn)
+        if store.postgres():
+            guard = conn.execute("SELECT current_setting('session_replication_role') AS replication,"
+                "(SELECT count(*) FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid "
+                "JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='ai_research' AND c.relname='jobs' "
+                "AND t.tgname IN ('research_guard_job_insert','research_guard_job_identity_update') "
+                "AND t.tgenabled IN ('O','A') AND NOT t.tgisinternal) AS guard_count").fetchone()
+            if not guard or guard['replication']!='origin' or guard['guard_count']!=2:
+                raise HTTPException(503, {'code':'RESEARCH_QUEUE_GUARD_NOT_INSTALLED'})
         if not conn.execute(f'SELECT key_id FROM {store.table("service_keys")} WHERE principal_id=? AND revoked=0 AND expires_at>?',
                             (owner, at.isoformat())).fetchone():
             raise ValueError('Owner needs an active service identity')
@@ -114,9 +150,12 @@ def enqueue(owner, match_id, mode, deadline, request_id='initial'):
         end = end.astimezone(timezone.utc)
         version = context.digest(payload)
         job_id = str(uuid.uuid4())
-        conn.execute(f'INSERT INTO {store.table("jobs")}(id,owner_id,match_id,mode,status,deadline,input_version,context_json,request_id,created_at) '
-                     'VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(owner_id,match_id,mode,input_version,request_id) DO NOTHING',
-                     (job_id, owner, match_id, mode, 'queued', end.isoformat(), version, context.canonical(payload), request_id, at.isoformat()))
+        extra_column = ',rerun_approval_id' if store.postgres() else ''
+        extra_value = ',?' if store.postgres() else ''
+        args = (job_id, owner, match_id, mode, 'queued', end.isoformat(), version, context.canonical(payload), request_id, at.isoformat())
+        if store.postgres(): args += (rerun_approval_id,)
+        conn.execute(f'INSERT INTO {store.table("jobs")}(id,owner_id,match_id,mode,status,deadline,input_version,context_json,request_id,created_at{extra_column}) '
+                     f'VALUES(?,?,?,?,?,?,?,?,?,?{extra_value}) ON CONFLICT(owner_id,match_id,mode,input_version,request_id) DO NOTHING',args)
         row = conn.execute(f'SELECT * FROM {store.table("jobs")} WHERE owner_id=? AND match_id=? AND mode=? AND input_version=? AND request_id=?',
                            (owner, match_id, mode, version, request_id)).fetchone()
         return job_view(dict(row), at)

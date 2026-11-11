@@ -245,9 +245,14 @@ async function renderCoupons() {
     ? fmtDay(`${data.date}T12:00:00Z`) : "Gün bilgisi yok";
   const matches = Number.isFinite(Number(data.matches)) ? Number(data.matches) : 0;
   el.innerHTML = `<p class="muted">${esc(dateText)} · tüm liglerden ${matches} maç</p>` +
+    (data.research_trio?.picks?.length ? CouponView.couponCard(data.research_trio, "Önerilen Üçlü Kupon", "b-good") : `<div class="card muted">2,50–4,00 oran aralığında uygun üçlü bulunamadı. Aşağıdaki kuponlar mevcut alternatiflerdir.</div>`) +
     CouponView.couponGroup(data, "banko", "b-good", data.date) +
     CouponView.couponGroup(data, "surprise", "b-warn", data.date) +
     (["banko","surprise"].some((key)=>data[key]?.publication === "published") ? detail("Günün önceki yayımlanmış kuponları", ["banko","surprise"].map((key)=>data[key]?.publication === "published" ? CouponView.couponCard(data[key],key === "banko" ? "Yayımlanmış Banko" : "Yayımlanmış Sürpriz","b-info") : "").join("")) : "");
+  el.querySelectorAll("[data-grok-coupon-match]").forEach((node) => {
+    const pick = (data.research_trio?.picks || []).find(item => String(item.id) === node.dataset.grokCouponMatch);
+    if (pick) window.GrokIntelligence?.mount(pick, node);
+  });
   el.querySelectorAll("[data-share-coupon]").forEach((button) => button.addEventListener("click", () => {
     const type = button.dataset.shareType, index = Number(button.dataset.shareIndex) || 0;
     const coupon = CouponView.alternatives(data, type)[index];
@@ -300,6 +305,7 @@ function renderSmallMatch(m) {
     <div class="card"><h4>Takım modeli kapsamı</h4><p class="muted">${m.independent_team_analysis?.available ? "Lisanslı geçmişten bağımsız ön analiz mevcut; ileriye dönük doğrulama tamamlanmadığı için öneri güvenini değiştirmez." : ({team_history_stale:"Takımların geçmiş sonuçları güncel değil; bağımsız model güveni hesaplanmıyor.",team_identity_unverified:"Takım kimlikleri geçmiş veriyle güvenle eşleştirilemedi.",insufficient_team_history:"Bağımsız model için yeterli takım geçmişi yok."}[m.independent_team_analysis?.reason] || "Bu lig için doğrulanmış, güncel ve lisanslı takım geçmişi bağlı değil. Gösterilen yüzdeler oranlardan hesaplanan piyasa olasılığıdır.")}</p>${m.independent_team_analysis?.available ? `<p>Geçmiş maç: ${Number(m.independent_team_analysis.history_matches) || 0} · Sonuç zamanı hassasiyeti: gün</p>` : ""}</div>
     ${detail("Detaylar", odds.length ? `<table><tr><th class="l">Seçenek</th><th>iddaa oranı</th><th></th></tr>${marketRows}</table>` : `<p class="muted">Bu maç için oran verisi yok.</p>`)}`;
   window.MatchPrompt?.mount(m, $("#modalBody"));
+  window.GrokIntelligence?.mount(m, $("#modalBody"));
 }
 
 function marketText(key, m) {
@@ -373,6 +379,7 @@ async function openMatch(id, competitionId = null) {
     ${window.RecommendationTools?.render(m, Slip.button, Simple.headline) || ""}
     ${detail("Detaylar", `<h4>Diğer seçenekler</h4>${markets}<h4>Takımlar</h4>${compare}<div id="matchInsights"></div><h4>Haberler</h4>${news}`)}`;
   window.MatchPrompt?.mount(m, $("#modalBody"));
+  window.GrokIntelligence?.mount(m, $("#modalBody"));
   $("#modal").classList.remove("hidden");
   renderOddsHistory(m);
   renderMatchInsights(m);

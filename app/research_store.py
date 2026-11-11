@@ -98,6 +98,41 @@ def session():
         conn.close()
 
 
+@contextmanager
+def ui_session():
+    """Separate read-only role/views for the administrator UI; never fall back to Bot credentials."""
+    if not postgres():
+        with session() as conn:
+            yield conn
+        return
+    url = os.environ.get('RESEARCH_UI_DATABASE_URL')
+    if not url:
+        raise RuntimeError('Separate research UI database URL required')
+    import psycopg
+    from psycopg.rows import dict_row
+    raw = psycopg.connect(url, row_factory=dict_row, prepare_threshold=None, connect_timeout=5)
+    conn = db.Connection(raw, True)
+    try:
+        conn.execute('SET TRANSACTION READ ONLY')
+        role = conn.execute("SELECT rolsuper,rolcreatedb,rolcreaterole,rolbypassrls,"
+            "pg_has_role(current_user,'lol_research_ui_reader','MEMBER') AS reader,"
+            "pg_has_role(current_user,'lol_research_runtime','MEMBER') AS runtime "
+            "FROM pg_roles WHERE rolname=current_user").fetchone()
+        writable = conn.execute("SELECT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace "
+            "WHERE n.nspname IN ('public','ai_research','research_evaluation') AND c.relkind IN ('r','p') "
+            "AND has_table_privilege(current_user,c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER,REFERENCES')) AS allowed").fetchone()
+        if (not role or not role['reader'] or role['runtime'] or writable['allowed']
+                or any(role[k] for k in ('rolsuper','rolcreatedb','rolcreaterole','rolbypassrls'))):
+            raise RuntimeError('Research UI connection is not read-only')
+        yield conn
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def initialize_local():
     if postgres() or db.DATABASE_URL:
         raise RuntimeError('This command initializes isolated SQLite only; PostgreSQL migrations require review')

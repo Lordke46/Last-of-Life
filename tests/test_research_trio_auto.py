@@ -1,0 +1,63 @@
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+
+from app.research_trio import select
+from app import research_auto
+
+NOW = datetime(2026, 11, 11, 12, tzinfo=timezone.utc)
+
+
+def entry(i, odds=1.5, p=.8):
+    prediction = {'id': str(i), 'league': 'test', 'home': f'H{i}', 'away': f'A{i}',
+                  'kickoff': (NOW + timedelta(hours=5)).isoformat(), 'markets': {}, 'iddaa_odds': {}}
+    choice = {'market': '1', 'p': p, 'raw_p': p, 'odds': odds, 'odds_source': 'iddaa', 'min_matches': 1}
+    return prediction, [choice]
+
+
+def test_trio_requires_three_distinct_upcoming_real_priced_matches():
+    result = select([entry(1), entry(2), entry(3)], now=NOW)
+    assert len(result['picks']) == 3
+    assert result['total_odds'] == 3.38
+    assert result['total_probability'] == .512
+    assert not select([entry(1), entry(1), entry(2)], now=NOW)['picks']
+    assert not select([entry(1, 3), entry(2, 3), entry(3, 3)], now=NOW)['picks']
+    missing = entry(3)
+    missing[1][0]['odds_source'] = 'claude'
+    assert not select([entry(1), entry(2), missing], now=NOW)['picks']
+
+
+def test_auto_disabled_without_touching_database(capsys):
+    with patch.dict('os.environ', {'RESEARCH_AUTO_ENABLED': '0'}), patch.object(research_auto.coupons, '_day_entries', side_effect=AssertionError):
+        research_auto.main()
+    assert 'disabled' in capsys.readouterr().out
+
+
+def test_auto_never_uses_unguarded_sqlite():
+    with patch.object(research_auto.research_store, 'postgres', return_value=False):
+        import pytest
+        with pytest.raises(RuntimeError, match='PostgreSQL'):
+            research_auto.enqueue_candidates('pilot', [entry(1), entry(2), entry(3)], at=NOW)
+
+
+def test_auto_uses_existing_planner_and_guarded_enqueue():
+    from contextlib import contextmanager
+    class Conn:
+        def execute(self, query):
+            class Rows:
+                def fetchall(self):
+                    return []
+            return Rows()
+    @contextmanager
+    def session():
+        yield Conn()
+    def context_read(conn, mid, at):
+        return {'match': {'id': mid, 'kickoff': (NOW + timedelta(hours=5)).isoformat()},
+                'prices': {}, 'prediction_snapshot': None}
+    with patch.object(research_auto.research_store, 'postgres', return_value=True), \
+         patch.object(research_auto.research_store, 'session', session), \
+         patch.object(research_auto.research_context, 'read', side_effect=context_read), \
+         patch.object(research_auto.research_service, 'enqueue', return_value={'status': 'queued'}) as enqueue:
+        result = research_auto.enqueue_candidates('pilot', [entry(1), entry(2), entry(3)], at=NOW)
+    assert result['selected'] == 3
+    assert enqueue.call_count == 3
+    assert all(call.args[2] == 'full' for call in enqueue.call_args_list)

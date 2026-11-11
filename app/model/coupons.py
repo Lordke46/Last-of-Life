@@ -459,9 +459,12 @@ def build_coupons(target: date) -> dict:
     surprise_diagnostics = {}
     surprise_alternatives = [_coupon("surprise", picks, surprise_note)
                              for picks in _select_balanced(daily_entries, "surprise", SURPRISE_ALTERNATIVES, surprise_diagnostics)]
+    from ..research_trio import select as select_research_trio
+    trio = select_research_trio(daily_entries)
     return {
         "date": target.isoformat(),
         "matches": len(daily_entries),
+        "research_trio": trio,
         # Kupon geçmişi ve Telegram mevcut tek-kupon alanlarını kullanmayı sürdürür.
         "banko": banko_alternatives[0] if banko_alternatives else _coupon("banko", [], banko_note),
         "surprise": surprise_alternatives[0] if surprise_alternatives else _coupon("surprise", [], surprise_note),

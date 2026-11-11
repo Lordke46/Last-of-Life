@@ -10,6 +10,72 @@ sınırındadır. `job_id`, `match_id`, `mode` ve `input_version` sunucudan alı
 Skill bu alanları verirse eşleşmeleri kontrol edilir, uyuşmazlık 409'dur. Skill'in
 `matches` listesi tam bir maç içermeli ve match_id atanmış kimlikle aynı olmalıdır.
 
+Önemli sözleşme ayrımı: `GET /schema`, dönüştürülmüş `ResearchResult` ve
+`POST /results` için şemadır; `POST /skill-results` istek gövdesinin şeması
+değildir. `/skill-results` ham Skill JSON'u alır, sonra sonucu sunucuda dönüştürür.
+ResearchResult gövdesindeki `researched_at`, `skill_name` ve `sources` gibi üst
+seviye alanlar ham Skill sözleşmesinde yer almaz ve burada 422 ile reddedilir.
+
+Örnek ham gövde (değerleri iş ve gerçek araştırmayla değiştirin; aşağıdakiler
+örnektir, doğrulanmış bir haber değildir):
+
+```json
+{
+  "schema_version": "1.0",
+  "mode": "full",
+  "research_time": "2026-11-10T12:00:00Z",
+  "timezone": "UTC",
+  "matches": [{
+    "match_id": "iddaa:example",
+    "findings": [{
+      "id": "F1", "category": "injury", "claim": "Durum bilinmiyor",
+      "sources": [], "status": "unverified", "checked_at": "2026-11-10T12:00:00Z"
+    }],
+    "model_prior": [], "form": {},
+    "lineups": {"home": {"type": "not_found"}, "away": {"type": "not_found"}},
+    "lineup_surprises": [], "limitations": ["Doğrulanmış kadro bulunamadı"]
+  }]
+}
+```
+
+`research_time` ve kaynaklı bulgu için `checked_at` veya kaynak başına
+`accessed_at` saat dilimli tarih-saat olmalıdır. `research_time`, araştırmanın
+gerçek zamanı olmalı; kaynaklı bulgu sayısı, kaynaklar ve durumlar gerçeğe uygun
+olmalıdır. `matches[0].match_id` işten alınır; isteğe bağlı `mode`, `job_id` ve
+`input_version` sunucu işiyle çelişemez. İsteğin diğer üst düzey alanları
+`schema_version`, `research_time`, `timezone` ve `matches` ile sınırlıdır.
+Sonuç ve kaynak sayıları sırasıyla 80 bulgu, 40 tekil kaynak ile sınırlıdır;
+bulgu başına en çok 10 kaynak referansı vardır. Bilinmeyen yayın tarihi `null`
+olabilir; tarih-saat uydurulmaz. Bilinmeyen veya kaynak bulunamayan bilgi
+`unverified`/`not_found` ile sunulabilir. İleri tarihli kanıt, gizli bilgi ve
+bilinmeyen alanlar reddedilir; bu hata bir kanıt doğrulaması değildir.
+
+Yeni 422 yanıtlarında `detail.path` ve `detail.reason` bulunur. `$` ham JSON'u,
+`$.matches[0]...` kaynak Skill alanını belirtir. `$.converted...` ise ham alana
+her zaman bire bir eşlenemeyen dönüştürülmüş ResearchResult doğrulama konumudur.
+Yanıtlar alan değerlerini, kimlik bilgilerini veya gövdeyi yansıtmaz; desteklenmeyen
+anahtar adları da yanıtta açıklanmaz. JSON gövdeleri ve sırlar loglanmamalıdır.
+
+Ham nesnenin `matches[0]` alanları: `match_id`, `competition`, `home_team`,
+`away_team`, `kickoff`, `venue`, `fixture_verification`, `model_prior`, `findings`,
+`form`, `lineups`, `lineup_surprises`, `key_developments`, `not_found`, `limitations`.
+Her bulgu için izin verilen alanlar: `id`, `team`, `category`, `player`, `claim`,
+`sources`, `independent_source_count`, `status`, `conflict_note`,
+`qualitative_impact`, `checked_at`. Her kaynak URL metni veya `url`, `publisher`,
+`title`, `tier`, `published_at`, `origin`, `kind`, `accessed_at` alanlarından
+oluşan nesnedir. Desteklenmeyen ek anahtarlar reddedilir. Skill kategorileri
+`injury`, `suspension`, `form`, `other` aynı adla; `absence`, `squad`, `coach`,
+`tactics` → `other`; `probable_lineup`, `official_lineup` → `lineup`; `schedule`
+→ `fixture_load` olarak saklanır. Değişen kategori `skill_details.original_category`
+altında sürümlü raporda korunur; `absence` sakatlık sayılmaz ve kadro kategorisi
+tek başına resmî kadro veya doğrulama kanıtı değildir. Geriye dönük `news`,
+`lineup` ve `fixture_load` girdileri de kabul edilir. Kaynak `kind` değeri
+`club`, `league`, `federation`, `media`, `other`, `unknown`
+olabilir. Üstte açıklanan yedi Skill durumu dışındaki durumlar reddedilir.
+Bozuk JSON, geçersiz biçim/tür/tarih, kanıt gereksinimi ihlali, çelişkili
+tekilleştirilmiş kaynak metadata'sı, çok derin içerik ve sonuç boyut/sayı sınırları
+422 üretir; iş, maç veya mod uyuşmazlığı 409, ham gövde 128 KiB sınırı 413'tür.
+
 Durumlar: `confirmed_official` ve `confirmed_independent` → `confirmed`;
 `single_source` → `reported`; `conflicting` → `conflicting`; `unverified`,
 `not_found`, `outdated` → `unknown`. Orijinal durum, etki, bulgu kimliği ve kaynak
@@ -43,6 +109,69 @@ yenilenmez; deadline geçmediyse iş yeniden claim edilebilir. Eşzamanlı yenil
 yalnız biri kazanır. Bu işlem ücretli LLM API çağrısı veya otomasyon başlatmaz.
 Kayıttan sonra aynı sonucu güvenle tekrar istemek mevcut token ile mümkündür;
 yenileme öncesindeki token tekrar isteğinde de reddedilir.
+
+### Claim yanıtı ve istemci kurtarma
+
+Hem `/claim` hem `/renew` aynı yapıda yanıt döndürür; aşağıdaki değerler sahtedir:
+
+```json
+{
+  "job": {
+    "id": "fake-job", "match_id": "iddaa:example", "mode": "full",
+    "status": "claimed", "deadline": "2026-11-12T18:00:00Z",
+    "input_version": "example-only", "created_at": "2026-11-12T15:00:00Z",
+    "report_id": null, "lease_expires_at": "2026-11-12T15:20:00Z"
+  },
+  "claim_token": "example-only-not-a-real-token"
+}
+```
+
+`lease_expires_at` üst seviyede değil `job` içindedir. `report_id` ve
+`lease_expires_at` iş görünümünde null olabilir; istemci eksik/bozuk opsiyonel
+alanlara dayanıklı olmalıdır. `claim_token` ve iş kimliği güvenli işlem için
+gereklidir. Başlangıç claim'i 20 dakikadır ve mevcut uygulamada lease zamanı iş
+deadline'ını aşabilir; iş deadline'ı ayrıca dikkate alınır. `/renew` yeni token
+verir, eskisini hemen geçersiz kılar ve yeni lease'i deadline ile sınırlar.
+
+Örnek `scripts/research_pilot_client.py` import edilen bir yardımcıdır, kendi
+başına otomasyon başlatmaz. Çağıran kod doğrulanmış HTTPS ve kapalı redirect
+kullanan bir HTTP istemcisi ile secret kasasından belleğe aldığı API anahtarını
+verir. HTTP istemcisinde header ve gövde loglaması kapalı olmalıdır. API anahtarı
+ve claim token'ı dosyaya, komut argümanına veya çıktıya yazılmamalıdır.
+
+```python
+# httpx veya httpx2 bağımlılığı gerekir (httpx requirements-dev.txt içinde).
+# api_key: secret kasasından yalnız belleğe alınmış değer
+# job_id ve skill_output: aynı, süresi dolmamış atanmış işin gerçek bağlamı
+from scripts.research_pilot_client import secure_http_client, ResearchPilotClient, PilotError, SubmissionUncertain
+http = secure_http_client('https://staging.example.invalid')
+pilot = ResearchPilotClient(http, api_key, job_id)
+lease_info = pilot.claim()  # Süre bilgisi mevcut değilse None; token içermez.
+try:
+    result = pilot.submit(skill_output, 'ayni-istek-icin-sabit-kimlik', 'skill-surumu')
+except SubmissionUncertain:
+    # Aynı süreçte aynı token, gövde ve idempotency anahtarıyla güvenli tekrar.
+    result = pilot.retry_submission()
+except PilotError:
+    # pilot nesnesini ve süreci açık tut; sır/gövde yazdırmadan incele.
+    result = None
+```
+
+İsteğin cevabı kaybolursa sunucu sonucu kaydetmiş olabilir. Aynı süreçteki
+`retry_submission()` aynı gövde ve idempotency anahtarıyla yeniden dener. Aynı
+iş farklı içerikle gönderilemez. İşlem sona ermiş ve token da kaybolmuşsa önce
+`GET /jobs` ile iş ve `report_id` kontrol edilir; rapor varsa tekrar oluşturulmaz.
+
+Kaybolan claim token'ı yalnız özeti saklandığından sunucudan geri okunamaz. İş
+henüz bitmemiş ve deadline geçmemişse istemci `GET /jobs` ile güncel lease
+sonunu kontrol edip süre dolduktan sonra açık operatör kararıyla yeniden claim
+alabilir; `reclaim_after_loss()` bu kontrolleri yapar. Yeni claim eski token
+özetini değiştirir. Token süresi dolunca yeni rapor kaydı yapılamaz; mevcut
+uygulama, daha önce kaydedilmiş *aynı* sonucun idempotent tekrarını token özeti
+hâlâ eşleşiyorsa süresi geçse de döndürebilir. Yeni claim bu eşleşmeyi bozar.
+Claim/renew yanıtı kaybolursa sunucu işlemi yapmış olabilir: otomatik tekrar
+veya tokenın hâlâ geçerli olduğunu varsayma; sunucunun iş görünümünü kontrol et.
+Deadline dolmuşsa yeniden claim 410 verir; eski araştırmanın zamanını değiştirme.
 
 Bu özellik Grok/xAI/OpenAI istemcisi içermez, LLM API çağrısı yapmaz ve Grok üzerinde
 rutin oluşturmaz. API varsayılan olarak kapalıdır. Mevcut öneri motoru, Poisson/Elo,
@@ -302,3 +431,23 @@ test sonucu → report akışları HTTP 200 verdi; eski maç/haber/oran/tahmin/m
 tabloları byte-değer karşılaştırmasında aynı kaldı. Test raporu bilinçli olarak
 "Grok araştırması yapılmadı" sınırlaması taşıdı ve geçici DB test bitince silindi.
 Bu, güncel bahis önerisi veya Grok Skill'inin çalıştığına dair kanıt değildir.
+
+## Girişli kullanıcı için Grok Intelligence görünümü
+
+`RESEARCH_UI_ENABLED=1` ve açıkça tanımlı `RESEARCH_UI_OWNER` ile, ayrı araştırma
+veritabanı bağlantısı kullanılarak etkinleşir. `/api/grok-intelligence/{match_id}`
+her durumda yönetici oturumu ister; `AUTH_REQUIRED=0` erişimi açmaz.
+Yalnız sunucuda belirtilen araştırma sahibinin en fazla 30 sürümünü, salt okunur
+ve `private, no-store` olarak döndürür. Yalnız uygulama yöneticileri seçilen sahibin raporlarını görebilir; kullanıcı bazlı rapor sahipliği değildir.
+Kayıt veya konfigürasyon yoksa boş durum ya da güvenli hata gösterilir. Servis
+anahtarı tarayıcıya gönderilmez. Canlıya geçmeden önce yönetici erişim politikası,
+veri kaynağı rolü ve kimlik doğrulama ayarları ayrıca gözden geçirilmelidir.
+Özgün bulgular, adaptörün sabit `Skill alanı:` etiketli bağlam kayıtlarından
+ayrılır; ham Skill çıktısı saklanmadığından bu ayrım kayıttaki işaretlere dayanır.
+Bilgi ve kaynak etiketleri tek başına bağımsız doğrulama değildir.
+
+PostgreSQL arayüzü için ayrıca `RESEARCH_UI_DATABASE_URL` ve yalnız
+`lol_research_ui_reader` rolü gereklidir; Bot veritabanı bağlantısına geri dönüş
+olmaksızın hata verir. Yeni rol ve queue migration'ları yalnız inceleme ve izole
+veritabanı testleri içindir. Kısıtlar ve geçiş kararları:
+`docs/GROK_QUEUE_AND_EVALUATION.md`.

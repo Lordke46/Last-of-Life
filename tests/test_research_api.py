@@ -24,6 +24,8 @@ class ResearchApiTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         for p in (patch.object(db, 'DATABASE_URL', None), patch.object(db, 'DB_PATH', Path(self.tmp.name)/'research.db'),
+                  # Legacy SQLite fixtures test transport/leases only; quota is exercised on PostgreSQL.
+                  patch.object(service, '_assert_guarded_backend', return_value=None),
                   patch.dict('os.environ', {'RESEARCH_DATABASE_URL':'', 'RESEARCH_API_ENABLED':'1',
                                             'AUTH_REQUIRED':'1', 'LOCAL_AUTO_UPDATE':'0'})):
             p.start()

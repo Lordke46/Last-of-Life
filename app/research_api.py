@@ -103,7 +103,7 @@ async def skill_results(request: Request, job_id: str):
     try:
         raw = json.loads(await request.body())
     except (ValueError, UnicodeDecodeError):
-        raise HTTPException(422, 'Geçersiz JSON') from None
+        raise HTTPException(422, {'path': '$', 'reason': 'Geçersiz JSON'}) from None
     job = await run_in_threadpool(service.assigned_job, principal, job_id)
     result = grok_skill_adapter.adapt(raw, job, version)
     return await run_in_threadpool(service.save_result, principal, job_id, result, lease, key)

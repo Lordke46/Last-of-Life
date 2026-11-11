@@ -36,6 +36,7 @@ def main(argv=None):
     job.add_argument('--mode', choices=('full', 'lineup_check'), required=True)
     job.add_argument('--deadline', required=True)
     job.add_argument('--request-id', default='initial')
+    job.add_argument('--rerun-approval-id', help='Previously recorded operator approval ID; never creates an approval')
     args = parser.parse_args(argv)
     dsn = os.environ.get('STAGING_ADMIN_DSN', '')
     try:
@@ -66,7 +67,8 @@ def main(argv=None):
                 conn.execute('UPDATE ai_research.service_keys SET revoked=1 WHERE key_id=?', (args.key_id,))
             result = {'revoked': True, 'key_id': args.key_id}
         else:
-            result = service.enqueue(args.owner, args.match_id, args.mode, args.deadline, args.request_id)
+            result = service.enqueue(args.owner, args.match_id, args.mode, args.deadline, args.request_id,
+                                     rerun_approval_id=args.rerun_approval_id)
     print(json.dumps(result, ensure_ascii=False))
 
 

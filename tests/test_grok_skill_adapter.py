@@ -142,6 +142,109 @@ class SkillAdapterTest(unittest.TestCase):
         raw=self.skill(job);raw['matches'].append(copy.deepcopy(raw['matches'][0]))
         self.assertEqual(self.submit(job,lease,raw).status_code,422)
 
+    def test_422_points_to_safe_skill_field_without_echoing_input(self):
+        job=self.job(); lease=self.claim(job); raw=self.skill(job)
+        cases=[('status','$.matches[0].findings[0].status'),
+               ('category','$.matches[0].findings[0].category')]
+        for field,path in cases:
+            bad=copy.deepcopy(raw); bad['matches'][0]['findings'][0][field]='invalid-private-text'
+            response=self.submit(job,lease,bad)
+            self.assertEqual(response.status_code,422)
+            self.assertEqual(response.json()['detail']['path'],path)
+            self.assertNotIn('invalid-private-text',response.text)
+        bad=copy.deepcopy(raw); bad['matches'][0]['findings'][0].pop('checked_at')
+        response=self.submit(job,lease,bad)
+        self.assertEqual(response.json()['detail']['path'],'$.matches[0].findings[0].sources[0].accessed_at')
+        self.assertIn('checked_at',response.json()['detail']['reason'])
+        bad=copy.deepcopy(raw); bad['matches'][0]['findings'][0]['sources'][0]['url']='https://example.com/?token=private-value'
+        response=self.submit(job,lease,bad)
+        self.assertEqual(response.json()['detail']['path'],'$.matches[0].findings[0].sources[0].url')
+        self.assertNotIn('private-value',response.text)
+        bad=copy.deepcopy(raw); bad['matches'][0]['findings'][0]['sources'][0]['published_at']='2099-01-01'
+        self.assertEqual(self.submit(job,lease,bad).json()['detail']['path'],
+                         '$.matches[0].findings[0].sources[0].published_at')
+
+    def test_results_schema_is_not_skill_results_contract(self):
+        job=self.job(); lease=self.claim(job)
+        converted=support.ResearchApiTest.payload(self,job)
+        response=self.submit(job,lease,converted)
+        self.assertEqual(response.status_code,422)
+        self.assertEqual(response.json()['detail']['path'],'$')
+        self.assertIn('Desteklenmeyen Skill alanı',response.json()['detail']['reason'])
+
+    def test_missing_sources_and_conflict_are_explicit_unknown_is_safe(self):
+        job=self.job(); lease=self.claim(job); raw=self.skill(job)
+        finding=raw['matches'][0]['findings'][0]
+        finding['sources']=[]; finding['status']='single_source'
+        response=self.submit(job,lease,raw)
+        self.assertEqual(response.json()['detail']['path'],'$.matches[0].findings[0].sources')
+        finding['status']='conflicting'; finding['sources']=[{'url':'https://example.com/one'}]
+        response=self.submit(job,lease,raw)
+        self.assertEqual(response.json()['detail']['reason'],'Çelişki için iki kaynak gerekli')
+        finding['status']='unverified'; finding['sources']=[]
+        response=self.submit(job,lease,raw)
+        self.assertEqual(response.status_code,200,response.text)
+        report=self.client.get('/api/research/reports/'+response.json()['report_id'],headers=self.headers()).json()['report']
+        self.assertEqual(report['findings'][0]['verification_status'],'unknown')
+        self.assertEqual(report['findings'][0]['original_status'],'unverified')
+
+    def test_converted_model_validation_is_sanitized(self):
+        job=self.job(); lease=self.claim(job); raw=self.skill(job)
+        raw['matches'][0]['findings'][0]['claim']=''
+        response=self.submit(job,lease,raw)
+        self.assertEqual(response.status_code,422)
+        self.assertIn('$.converted.findings[0].statement',response.json()['detail']['path'])
+        self.assertNotIn('input',response.text)
+
+    def test_thirteen_synthetic_sources_and_conflict_survive(self):
+        job=self.job(); lease=self.claim(job); raw=self.skill(job)
+        first=raw['matches'][0]['findings'][0]
+        first['sources']=[{'url':f'https://example.com/source/{i}', 'published_at':None,
+                           'origin':'synthetic'} for i in range(8)]
+        first['status']='conflicting'; first['conflict_note']='Kaynaklar farklı bildiriyor'
+        second=copy.deepcopy(first); second.update(id='F2',status='unverified',claim='Durum belirsiz')
+        second['sources']=[{'url':f'https://example.com/source/{i}', 'published_at':None,
+                            'origin':'synthetic'} for i in range(8,13)]
+        raw['matches'][0]['findings'].append(second)
+        response=self.submit(job,lease,raw)
+        self.assertEqual(response.status_code,200,response.text)
+        report=self.client.get('/api/research/reports/'+response.json()['report_id'],headers=self.headers()).json()['report']
+        self.assertEqual(len(report['sources']),13)
+        self.assertEqual(report['findings'][0]['verification_status'],'conflicting')
+        self.assertEqual(report['findings'][0]['skill_details']['conflict_note'],'Kaynaklar farklı bildiriyor')
+        self.assertTrue(all(source.get('published_at') is None and source.get('published_date') is None for source in report['sources']))
+
+    def test_skill_categories_are_preserved_in_versioned_report(self):
+        mapping={'injury':'injury','suspension':'suspension','absence':'other',
+                 'squad':'other','probable_lineup':'lineup','official_lineup':'lineup',
+                 'form':'form','schedule':'fixture_load','coach':'other',
+                 'tactics':'other','other':'other'}
+        job=self.job(); lease=self.claim(job); raw=self.skill(job)
+        template=raw['matches'][0]['findings'][0]
+        raw['matches'][0]['findings']=[]
+        for index, category in enumerate(mapping):
+            finding=copy.deepcopy(template)
+            finding.update(id=f'F{index}',category=category,status='unverified',sources=[])
+            raw['matches'][0]['findings'].append(finding)
+        response=self.submit(job,lease,raw)
+        self.assertEqual(response.status_code,200,response.text)
+        report=self.client.get('/api/research/reports/'+response.json()['report_id'],headers=self.headers()).json()['report']
+        for finding, (original, normalized) in zip(report['findings'],mapping.items()):
+            self.assertEqual(finding['category'],normalized)
+            self.assertEqual(finding['verification_status'],'unknown')
+            if original != normalized:
+                self.assertEqual(finding['skill_details']['original_category'],original)
+            else:
+                self.assertNotIn('original_category',finding['skill_details'])
+        self.assertEqual(report['lineup_assessment']['lineup_status'],'predicted')
+        self.assertTrue(self.submit(job,lease,raw).json()['duplicate'])
+
+    def test_unknown_category_still_rejected(self):
+        job=self.job(); raw=self.skill(job)
+        raw['matches'][0]['findings'][0]['category']='unsupported_category'
+        with self.assertRaises(HTTPException) as raised: adapt(raw,job,'1')
+        self.assertEqual(raised.exception.status_code,422)
+
     def test_renew_rotates_token_and_old_one_cannot_submit_or_renew(self):
         job=self.job(); old=self.claim(job)
         url='/api/research/jobs/'+job['id']+'/renew'
