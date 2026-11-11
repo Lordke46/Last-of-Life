@@ -1,5 +1,7 @@
 # Last-of-Life — geliştirme devri
 
+> 11 Kasım 2026 güncellemesi: Araştırma şeması ve ayrı servis rolleri production'a uygulandı; Vercel Research API etkin ve yetkili GET testleri başarılı. Grok'un zamanlanmış GET testi başarılı. Tek maçlık gerçek araştırma pilotu bekleniyor; otomatik iş seçimi ve kupona etkisi henüz tamamlanmadı. Aşağıdaki eski durum ifadeleri tarihsel geliştirme devridir.
+
 Durum: yerel Grok Research geliştirmeleri, `codex/grok-research-mvp` dalındaki `fcf4aa6` temeli üzerine kaydedildi. Bu dal üretime alınmış veya main'e birleştirilmiş değildir. Bu devir dosyasındaki kodları ve mevcut çalışma ağacını inceleyerek devam edin; staging ve production'a izinsiz müdahale etmeyin.
 
 ## Tamamlananlar
@@ -13,7 +15,7 @@ Durum: yerel Grok Research geliştirmeleri, `codex/grok-research-mvp` dalındaki
 
 ## Kanıt ve sınırlamalar
 
-- Önceki yerel koşuda 544 Python testi, 80 alt test ve 93 JavaScript testi geçti. Bu devir sırasında uzun testler yeniden çalıştırılmadı. Yeni üçlü/kuyruk testleri pytest biçimindedir; mevcut GitHub iş akışındaki unittest keşfi bunları tek başına çalıştırmaz.
+- Önceki yerel koşuda 544 Python testi, 80 alt test ve 93 JavaScript testi geçti. Bu devir sırasında uzun testler yeniden çalıştırılmadı. Üçlü/kuyruk testleri unittest keşfine uyarlanmıştır.
 - Gerçek Grok pilotunda rapor kaydı ve UI daha önce staging üzerinde doğrulandı; son otomatik kuyruk ve üçlü bağlantısı gerçek Grok ile uçtan uca doğrulanmadı.
 - Otomatik kuyruk için kanonik kimliklerin gözden geçirilmesi, eski işlerin güvenli backfill kararı, ayrı sınırlı kuyruk yazıcısı ve gerçek PostgreSQL entegrasyon testi eksik. Bot yetkilerini genişletmeyin.
 - Grok Bot Routine ürün özelliği belgelenmiş olsa da hesapta Skill'in, secret erişiminin ve gözetimsiz çalışmanın uyumu doğrulanmalı. Eksik araştırmalar ve doğrulama etiketleri gerçek haber doğrulaması sayılmaz.

@@ -100,10 +100,10 @@ def _assert_guarded_backend():
         raise HTTPException(503, {'code':'RESEARCH_QUEUE_POSTGRES_REQUIRED'})
 
 
-def enqueue(owner, match_id, mode, deadline, request_id='initial', *, rerun_approval_id=None):
+def enqueue(owner, match_id, mode, deadline, request_id='initial', *, rerun_approval_id=None, queue_writer=False):
     _assert_guarded_backend()
     try:
-        return _enqueue(owner, match_id, mode, deadline, request_id, rerun_approval_id)
+        return _enqueue(owner, match_id, mode, deadline, request_id, rerun_approval_id, queue_writer)
     except Exception as exc:
         try:
             import psycopg
@@ -120,7 +120,7 @@ def enqueue(owner, match_id, mode, deadline, request_id='initial', *, rerun_appr
         raise
 
 
-def _enqueue(owner, match_id, mode, deadline, request_id, rerun_approval_id):
+def _enqueue(owner, match_id, mode, deadline, request_id, rerun_approval_id, queue_writer=False):
     if mode not in ('full', 'lineup_check'):
         raise ValueError('Unsupported research mode')
     if not re.fullmatch(r'[A-Za-z0-9_.:-]{1,100}', request_id):
@@ -129,7 +129,7 @@ def _enqueue(owner, match_id, mode, deadline, request_id, rerun_approval_id):
         raise ValueError('A PostgreSQL operator approval is required')
     at = now()
     end = timestamp(deadline)
-    with store.session() as conn:
+    with (store.queue_session() if queue_writer else store.session()) as conn:
         _transaction_lock(conn)
         if store.postgres():
             guard = conn.execute("SELECT current_setting('session_replication_role') AS replication,"
@@ -139,7 +139,8 @@ def _enqueue(owner, match_id, mode, deadline, request_id, rerun_approval_id):
                 "AND t.tgenabled IN ('O','A') AND NOT t.tgisinternal) AS guard_count").fetchone()
             if not guard or guard['replication']!='origin' or guard['guard_count']!=2:
                 raise HTTPException(503, {'code':'RESEARCH_QUEUE_GUARD_NOT_INSTALLED'})
-        if not conn.execute(f'SELECT key_id FROM {store.table("service_keys")} WHERE principal_id=? AND revoked=0 AND expires_at>?',
+        keys = 'ai_research.queue_principals' if queue_writer else store.table('service_keys')
+        if not conn.execute(f'SELECT key_id FROM {keys} WHERE principal_id=? AND revoked=0 AND expires_at>?',
                             (owner, at.isoformat())).fetchone():
             raise ValueError('Owner needs an active service identity')
         payload = context.read(conn, match_id, at)

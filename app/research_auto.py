@@ -60,7 +60,7 @@ def enqueue_candidates(owner, entries, *, at=None):
     at = at or datetime.now(timezone.utc)
     picks, selection_mode = _research_picks(entries, at)
     contexts = []
-    with research_store.session() as conn:
+    with research_store.queue_session() as conn:
         jobs = [dict(row) for row in conn.execute(
             f'SELECT match_id,mode,created_at FROM {research_store.table("jobs")}').fetchall()]
         for pick in picks:
@@ -75,7 +75,7 @@ def enqueue_candidates(owner, entries, *, at=None):
         if candidate['decision'] != 'propose':
             continue
         try:
-            job = research_service.enqueue(owner, candidate['match_id'], 'full', candidate['deadline'], 'auto-full-v1')
+            job = research_service.enqueue(owner, candidate['match_id'], 'full', candidate['deadline'], 'auto-full-v1', queue_writer=True)
             results.append({'match_id': candidate['match_id'], 'status': job['status']})
         except HTTPException as exc:
             if exc.status_code != 409:
@@ -89,8 +89,8 @@ def main():
     if os.environ.get('RESEARCH_AUTO_ENABLED') != '1':
         print('Research auto queue disabled')
         return
-    if not research_store.postgres():
-        raise RuntimeError('RESEARCH_DATABASE_URL and guarded PostgreSQL queue required')
+    if not research_store.postgres() or not os.environ.get('RESEARCH_QUEUE_DATABASE_URL'):
+        raise RuntimeError('Separate research runtime and queue PostgreSQL URLs required')
     owner = os.environ.get('RESEARCH_AUTO_OWNER', '')
     day = datetime.now(research_planner.TZ).date()
     output = enqueue_candidates(owner, coupons._day_entries(day))

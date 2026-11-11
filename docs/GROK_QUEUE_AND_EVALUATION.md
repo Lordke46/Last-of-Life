@@ -102,3 +102,14 @@ tetikleyicide engellenir. Bu kontroller, istemci tarafından verilen model
 snapshotının gerçekten geçmişte var olduğunu tek başına kanıtlamaz: imzalı/
 güvenilir kaynak snapshotı ve sonuç/ödeme entegrasyonu ayrıca gereklidir.
 Hiçbir uygulama bu tablolara bağlı değildir; production migration uygulanmadı.
+
+
+## Sınırlı kuyruk yazıcısı — yerel hazırlık
+
+`20261111000004_research_queue_writer.sql`, ayrı `lol_research_queue_writer`
+NOLOGIN rolü ve anahtar özetlerini dışarıda bırakan principal görünümü sağlar.
+Ayrı login `RESEARCH_QUEUE_DATABASE_URL` ile yalnız iş ekleme yolunda kullanılır;
+Bot/reader kimliği kullanılmaz. Kod public tablo yazma, diğer research
+tablolarına yazma ve jobs üzerinde update/delete yetkisini reddeder. Kaynaklar,
+match alias ve kota için mevcut PostgreSQL guard'ları zorunludur. Migration henüz
+production veya mevcut staging'e uygulanmamıştır.
