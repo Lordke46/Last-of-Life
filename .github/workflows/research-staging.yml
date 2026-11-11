@@ -1,0 +1,80 @@
+name: Grok research queue (staging only)
+
+# Intentionally not scheduled. Run manually after the staging database,
+# identity backfill and Grok Routine have been verified.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Check configuration or enqueue staging candidates"
+        required: true
+        type: choice
+        default: check
+        options:
+          - check
+          - enqueue
+      confirm:
+        description: "Type STAGING_ONLY to permit enqueue (otherwise check only)"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-queue-staging
+  cancel-in-progress: false
+
+jobs:
+  research-staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: research-staging
+    env:
+      DATABASE_URL: ${{ secrets.RESEARCH_STAGING_SOURCE_DATABASE_URL }}
+      RESEARCH_DATABASE_URL: ${{ secrets.RESEARCH_STAGING_QUEUE_DATABASE_URL }}
+      RESEARCH_AUTO_OWNER: ${{ vars.RESEARCH_STAGING_OWNER }}
+      RESEARCH_AUTO_ENABLED: '0'
+      REQUESTED_MODE: ${{ inputs.mode }}
+      CONFIRMATION: ${{ inputs.confirm }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Verify staging-only configuration without connecting
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from urllib.parse import urlsplit
+
+          mode = os.environ['REQUESTED_MODE']
+          confirmation = os.environ['CONFIRMATION']
+          if mode not in ('check', 'enqueue'):
+              raise SystemExit('Invalid operation')
+          if mode == 'enqueue' and confirmation != 'STAGING_ONLY':
+              raise SystemExit('Enqueue requires explicit STAGING_ONLY confirmation')
+          required = ('DATABASE_URL', 'RESEARCH_DATABASE_URL', 'RESEARCH_AUTO_OWNER')
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit('Missing staging configuration: ' + ', '.join(missing))
+          for name in ('DATABASE_URL', 'RESEARCH_DATABASE_URL'):
+              url = urlsplit(os.environ[name])
+              if url.scheme not in ('postgresql', 'postgresql+psycopg', 'postgres'):
+                  raise SystemExit(name + ' must use PostgreSQL')
+              if not url.hostname:
+                  raise SystemExit(name + ' has no hostname')
+          if os.environ['DATABASE_URL'] == os.environ['RESEARCH_DATABASE_URL']:
+              raise SystemExit('Source and research connections must be distinct')
+          print('Staging configuration shape verified; no database connection made.')
+          PY
+      - name: Install dependencies
+        if: ${{ inputs.mode == 'enqueue' }}
+        run: pip install -r requirements.txt
+      - name: Enqueue staging research jobs
+        if: ${{ inputs.mode == 'enqueue' }}
+        env:
+          RESEARCH_AUTO_ENABLED: '1'
+        run: python -m app.research_auto
