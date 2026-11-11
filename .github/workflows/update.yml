@@ -49,13 +49,6 @@ jobs:
         env:
           PYTHONUNBUFFERED: "1"
         run: python -m app.updater ${{ github.event_name == 'workflow_dispatch' && !inputs.news && '--no-news' || '' }}
-      - name: Araştırma kuyruğu (ayrıca etkinleştirilirse)
-        if: ${{ vars.RESEARCH_AUTO_ENABLED == '1' }}
-        env:
-          RESEARCH_AUTO_ENABLED: '1'
-          RESEARCH_AUTO_OWNER: ${{ vars.RESEARCH_AUTO_OWNER }}
-          RESEARCH_DATABASE_URL: ${{ secrets.RESEARCH_QUEUE_DATABASE_URL }}
-        run: python -m app.research_auto
       - name: Veri bütünlüğü denetimi
         if: ${{ always() && env.DATABASE_URL != '' }}
         timeout-minutes: 2
