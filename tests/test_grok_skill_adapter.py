@@ -214,6 +214,36 @@ class SkillAdapterTest(unittest.TestCase):
         self.assertEqual(report['findings'][0]['skill_details']['conflict_note'],'Kaynaklar farklı bildiriyor')
         self.assertTrue(all(source.get('published_at') is None and source.get('published_date') is None for source in report['sources']))
 
+    def test_more_than_forty_sources_survive_and_limit_is_clear(self):
+        job=self.job(); lease=self.claim(job); raw=self.skill(job)
+        first=raw['matches'][0]['findings'][0]
+        first.update(status='unverified', checked_at=service.now().isoformat())
+        raw['matches'][0]['findings']=[]
+        for index in range(5):
+            finding=copy.deepcopy(first)
+            finding.update(id=f'F{index}', claim=f'Kaynaklı bulgu {index}',
+                sources=[{'url':f'https://example.com/source/{index*9+i}'} for i in range(9)])
+            raw['matches'][0]['findings'].append(finding)
+        response=self.submit(job,lease,raw)
+        self.assertEqual(response.status_code,200,response.text)
+        report=self.client.get('/api/research/reports/'+response.json()['report_id'],headers=self.headers()).json()['report']
+        self.assertEqual(len(report['sources']),45)
+        self.assertEqual(sum(len(f['source_ids']) for f in report['findings']),45)
+        self.assertTrue(self.submit(job,lease,raw).json()['duplicate'])
+
+    def test_over_one_hundred_sources_returns_clear_error(self):
+        job=self.job(); raw=self.skill(job)
+        first=raw['matches'][0]['findings'][0];first.update(status='unverified')
+        raw['matches'][0]['findings']=[]
+        for index in range(11):
+            finding=copy.deepcopy(first)
+            finding.update(id=f'F{index}',sources=[{'url':f'https://example.com/s/{index*10+i}'} for i in range(10 if index<10 else 1)])
+            raw['matches'][0]['findings'].append(finding)
+        with self.assertRaises(HTTPException) as raised: adapt(raw,job,'1')
+        self.assertEqual(raised.exception.status_code,422)
+        self.assertEqual(raised.exception.detail['path'],'$.converted.sources')
+        self.assertIn('100',raised.exception.detail['reason'])
+
     def test_skill_categories_are_preserved_in_versioned_report(self):
         mapping={'injury':'injury','suspension':'suspension','absence':'other',
                  'squad':'other','probable_lineup':'lineup','official_lineup':'lineup',

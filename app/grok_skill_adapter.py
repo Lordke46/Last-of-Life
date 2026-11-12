@@ -209,6 +209,8 @@ def adapt(raw, job, skill_version):
         if len(json.dumps(result,ensure_ascii=False,allow_nan=False).encode('utf-8')) > 128 * 1024:
             raise ValueError('Dönüştürülen sonuç boyut sınırını aşıyor')
         # JSON mode is required by the existing strict datetime validator.
+        if len(sources) > 100:
+            raise SkillInputError('$.converted.sources', 'En fazla 100 tekil kaynak kabul edilir')
         converted = ResearchResult.model_validate_json(json.dumps(result,ensure_ascii=False,allow_nan=False))
         if len(converted.model_dump_json().encode('utf-8')) > 128 * 1024:
             raise ValueError('Doğrulanmış sonuç boyut sınırını aşıyor')

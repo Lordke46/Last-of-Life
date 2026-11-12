@@ -60,7 +60,7 @@ class ResearchResult(StrictModel):
     skill_version: Annotated[str, Field(min_length=1, max_length=80)]
     researched_at: AwareDatetime
     summary: Text | None = None
-    sources: Annotated[list[Source], Field(max_length=40)] = Field(default_factory=list)
+    sources: Annotated[list[Source], Field(max_length=100)] = Field(default_factory=list)
     findings: Annotated[list[Finding], Field(max_length=80)] = Field(default_factory=list)
     injury_assessment: Assessment = Field(default_factory=Assessment)
     lineup_assessment: LineupAssessment = Field(default_factory=LineupAssessment)

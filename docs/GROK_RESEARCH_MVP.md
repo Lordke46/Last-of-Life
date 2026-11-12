@@ -44,7 +44,7 @@ gerçek zamanı olmalı; kaynaklı bulgu sayısı, kaynaklar ve durumlar gerçe�
 olmalıdır. `matches[0].match_id` işten alınır; isteğe bağlı `mode`, `job_id` ve
 `input_version` sunucu işiyle çelişemez. İsteğin diğer üst düzey alanları
 `schema_version`, `research_time`, `timezone` ve `matches` ile sınırlıdır.
-Sonuç ve kaynak sayıları sırasıyla 80 bulgu, 40 tekil kaynak ile sınırlıdır;
+Sonuç ve kaynak sayıları sırasıyla 80 bulgu, 100 tekil kaynak ile sınırlıdır;
 bulgu başına en çok 10 kaynak referansı vardır. Bilinmeyen yayın tarihi `null`
 olabilir; tarih-saat uydurulmaz. Bilinmeyen veya kaynak bulunamayan bilgi
 `unverified`/`not_found` ile sunulabilir. İleri tarihli kanıt, gizli bilgi ve

@@ -2,6 +2,8 @@
 
 > 11 Kasım 2026 güncellemesi: Araştırma şeması ve ayrı servis rolleri production'a uygulandı; Vercel Research API etkin ve yetkili GET testleri başarılı. Grok'un zamanlanmış GET testi başarılı. Tek maçlık gerçek araştırma pilotu bekleniyor; otomatik iş seçimi ve kupona etkisi henüz tamamlanmadı. Aşağıdaki eski durum ifadeleri tarihsel geliştirme devridir.
 
+> 12 Kasım 2026: İlk canlı pilot 50 tekil kaynak nedeniyle önceki 40 kaynak sınırında reddedildi; iş süresi doldu ve yeniden açılmamalı. Limit 100’e yükseltildi, 128 KiB sınırı korundu. Yeni maçla tekrar test gerekir.
+
 Durum: yerel Grok Research geliştirmeleri, `codex/grok-research-mvp` dalındaki `fcf4aa6` temeli üzerine kaydedildi. Bu dal üretime alınmış veya main'e birleştirilmiş değildir. Bu devir dosyasındaki kodları ve mevcut çalışma ağacını inceleyerek devam edin; staging ve production'a izinsiz müdahale etmeyin.
 
 ## Tamamlananlar
