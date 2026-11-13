@@ -86,7 +86,7 @@
   }
 
   function emptyReason(data, type) {
-    const label = type === "small_leagues" ? "Piyasa verili küçük ligler" : type === "surprise" ? "Sürpriz" : "Dengeli (Banko)";
+    const label = type === "small_leagues" ? "Piyasa verili küçük ligler" : type === "surprise" ? "Sürpriz" : "Banko";
     const diag = data && typeof data === "object" ? data[`${type}_diagnostics`] || {} : {};
     const lines = [];
     if (diag.stale_odds) {
@@ -94,9 +94,15 @@
       const when = Number.isFinite(age) ? `Oranlar ${Math.trunc(age)} dk önce alındı. ` : "";
       lines.push(`${when}Canlı kupon kapalı: iddaa fiyatı 2 saatten eski (${diag.stale_odds} maç).`);
     }
-    if (type === "banko" && ["hit_rate_v3", "hit_rate_v4"].includes(diag.selection_policy) && !diag.eligible_matches && !diag.stale_odds) {
-      lines.push(diag.selection_policy === "hit_rate_v4" ? "Henüz başlamamış maçlarda %70 olasılık, 1,15–2,30 gerçek oran ve yeterli takım verisi koşullarına uyan aday bulunamadı." : "Henüz başlamamış maçlarda %62 olasılık, 1,40–2,30 gerçek oran ve yeterli takım verisi koşullarına uyan aday bulunamadı.");
-    } else if (type === "banko" && ["hit_rate_v3", "hit_rate_v4"].includes(diag.selection_policy) && diag.eligible_matches) {
+    const policies = ["hit_rate_v3", "hit_rate_v4", "hit_probability_v4"];
+    if (type !== "small_leagues" && policies.includes(diag.selection_policy) && !diag.eligible_matches && !diag.stale_odds) {
+      const bands = {
+        hit_rate_v3: "%62 olasılık, 1,40–2,30 gerçek oran",
+        hit_rate_v4: "%70 olasılık, 1,15–2,30 gerçek oran",
+        hit_probability_v4: type === "surprise" ? "%33 olasılık, 1,40–3,50 gerçek oran" : "%45 olasılık, 1,10–2,00 gerçek oran",
+      };
+      lines.push(`Henüz başlamamış maçlarda ${bands[diag.selection_policy]} ve yeterli takım verisi koşullarına uyan aday bulunamadı.`);
+    } else if (type !== "small_leagues" && policies.includes(diag.selection_policy) && diag.eligible_matches) {
       lines.push(`${diag.eligible_matches} aday var; farklı maç sayısı, toplam oran veya minimum bahis adedi koşullarında uygun kupon oluşmadı.`);
     } else if (type === "banko" && diag.calibration_insufficient) {
       const best = Number.isFinite(Number(diag.calibration_best_n)) ? Math.trunc(Number(diag.calibration_best_n)) : 0;
@@ -113,7 +119,7 @@
   }
 
   function couponGroup(data, type, badgeClass, date) {
-    const label = type === "small_leagues" ? "Piyasa verili küçük lig alternatifleri" : type === "surprise" ? "Sürpriz tercihi" : "Banko tercihi · Dengeli";
+    const label = type === "small_leagues" ? "Piyasa verili küçük lig alternatifleri" : type === "surprise" ? "Sürpriz tercihi" : "Banko tercihi";
     const coupons = alternatives(data, type);
     const content = coupons.length
       ? coupons.map((coupon, index) => couponCard(coupon, `${label} Kuponu ${index + 1}`, badgeClass, { kind: type, index, date, selectionTier: data?.selection_tier, targetMet: data?.target_met })).join("")

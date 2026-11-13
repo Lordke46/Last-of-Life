@@ -83,6 +83,14 @@ class MessageTest(unittest.TestCase):
         self.assertIn("kalibrasyon 53", text)
         self.assertIn("değer %+26.0", text)
 
+    def test_fallback_coupon_is_marked_and_target_flag_survives_compaction(self):
+        met = tg.format_coupon_message("2026-10-17", [{**coupon("banko", [pick(1, "1")]), "target_met": True}])
+        self.assertNotIn("hedef bandı dışı", met)
+        compact = tg._compact_coupon({**coupon("surprise", [pick(1, "1")]), "target_met": False,
+                                      "stake_note": "düşük kasa"})
+        self.assertEqual((compact["target_met"], compact["stake_note"]), (False, "düşük kasa"))
+        self.assertIn("hedef bandı dışı", tg.format_coupon_message("2026-10-17", [compact]))
+
     def test_only_surprise_sends_explicit_no_bank_statement(self):
         text = tg.format_coupon_message(
             "2026-10-17", [coupon("surprise", [pick(1, "2")])],

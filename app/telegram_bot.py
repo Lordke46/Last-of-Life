@@ -108,6 +108,7 @@ def _compact_coupon(coupon: dict) -> dict:
     return {"type": coupon["type"], "total_odds": coupon["total_odds"],
             "total_probability": coupon["total_probability"],
             "coupon_id": coupon.get("coupon_id"), "published_at": coupon.get("published_at"),
+            **{k: coupon[k] for k in ("target_met", "stake_note") if k in coupon},
             "picks": [{**{k: p[k] for k in fields}, **{k: p[k] for k in extras if k in p}}
                       for p in coupon["picks"]]}
 
@@ -115,8 +116,9 @@ def _compact_coupon(coupon: dict) -> dict:
 def format_coupon_message(day: str, coupons: list[dict], banko_note: str | None = None) -> str:
     lines = [f"🎯 <b>Günlük Kupon</b> · {_day_label(day)}"]
     for c in coupons:
+        tier = "" if c.get("target_met", True) else " · <i>hedef bandı dışı, günün en iyi yedeği</i>"
         lines += ["", f"{COUPON_TITLES[c['type']]} · toplam oran <b>{c['total_odds']:.2f}</b>"
-                      f" · tutma %{c['total_probability'] * 100:.0f}"]
+                      f" · tutma %{c['total_probability'] * 100:.0f}{tier}"]
         for p in sorted(c["picks"], key=lambda x: x["kickoff"]):
             lines.append(f"• {_kickoff_tr(p['kickoff'])} {_esc(p['league_name'])} — "
                          f"{_esc(p['home'])} - {_esc(p['away'])} → <b>{_esc(_label(p['market']))}</b> "
@@ -267,7 +269,8 @@ def post_daily_coupons(now: datetime, send, force: bool = False, day: date | Non
         coupons.append(_compact_coupon(copy))
     if not coupons:
         return "kupon: uygun kupon yok"
-    note = "Güncel gerçek oran, olasılık, takım verisi ve kupon koşullarına uyan en az 2 farklı maç bulunamadı."
+    note = ("Güncel gerçek oranı 2 saatten taze, başlamamış ve bülten MBS kuralına uyan hiçbir maç bulunamadı; "
+            "oranlar yenilenince tekrar denenecek.")
     sent = _post_once(key, "coupon", now, json.dumps(coupons, ensure_ascii=False),
                       format_coupon_message(key, coupons, banko_note=note), send)
     return "kupon: gönderildi" if sent else "kupon: başka çalıştırma gönderiyor/gönderdi"

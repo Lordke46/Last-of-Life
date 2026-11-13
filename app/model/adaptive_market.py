@@ -1,12 +1,14 @@
 """Choose market weights on immutable pre-match forecasts, with temporal holdout.
 
-All leagues are pooled only when league-specific evidence is insufficient. Four
-challengers are compared to the incumbent 50/50 blend; matchweek clusters and a
-conservative multiple-comparison interval avoid switching on tiny lucky samples.
+All leagues are pooled only when league-specific evidence is insufficient. The
+challengers are compared to the incumbent blend (``MODEL["market_weight"]``);
+matchweek clusters and a conservative multiple-comparison interval avoid
+switching on tiny lucky samples.
 """
 import json
 import math
 from datetime import datetime,timezone,timedelta
+from ..config import MODEL
 from .settlement import outcome
 
 KEY = ('__market_weights__','','')
@@ -24,8 +26,9 @@ def choose(rows):
     if len(train)<60 or len(test)<40:return None
     def loss(row,w):
         return sum(((1-w)*p+w*q-y)**2 for p,q,y in zip(row['model'],row['market'],row['actual']))/len(row['model'])
+    incumbent=float(MODEL["market_weight"])
     chosen=min(WEIGHTS,key=lambda w:sum(loss(r,w) for r in train))
-    diffs=[loss(r,chosen)-loss(r,.5) for r in test]
+    diffs=[loss(r,chosen)-loss(r,incumbent) for r in test]
     mean=sum(diffs)/len(diffs)
     blocks={}
     for r,d in zip(test,diffs):
@@ -34,7 +37,7 @@ def choose(rows):
     g=len(blocks)
     se=math.sqrt(g/(g-1)*sum(sum(d-mean for d in block)**2 for block in blocks.values())/len(diffs)**2) if g>1 else math.inf
     accepted=g>=8 and mean<-.002 and mean+2.5*se<0
-    return {'weight':chosen if accepted else .5, 'candidate_weight':chosen,
+    return {'weight':chosen if accepted else incumbent, 'candidate_weight':chosen,
             'status':'validated_challenger' if accepted else 'incumbent_retained',
             'train_n':len(train),'holdout_n':len(test),'holdout_blocks':g,
             'delta_brier':round(mean,6),'upper_bound':round(mean+2.5*se,6) if g>1 else None,

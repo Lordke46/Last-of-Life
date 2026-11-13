@@ -41,9 +41,9 @@ test("coupon groups display multiple alternatives under their type", () => {
     banko_alternatives: [coupon("banko"), coupon("banko", { picks: [pick({ home: "İkinci" })] })],
     surprise_alternatives: [coupon("surprise")],
   }, "banko", "b-good");
-  assert.match(html, /Banko tercihi · Dengeli Kupon Alternatifleri/);
-  assert.match(html, /Banko tercihi · Dengeli Kuponu 1/);
-  assert.match(html, /Banko tercihi · Dengeli Kuponu 2/);
+  assert.match(html, /Banko tercihi Kupon Alternatifleri/);
+  assert.match(html, /Banko tercihi Kuponu 1/);
+  assert.match(html, /Banko tercihi Kuponu 2/);
   assert.doesNotMatch(html, /Sürpriz Kuponu/);
 });
 
@@ -100,6 +100,10 @@ test('limited calibration is visible and the new policy does not blame it for an
  const reason=CouponView.emptyReason({banko_diagnostics:{selection_policy:'hit_rate_v3',eligible_matches:1,calibration_insufficient:3}},'banko');
  assert.match(reason,/1 aday var/);
  assert.doesNotMatch(reason,/en az 30/);
+ const v4=CouponView.emptyReason({banko_diagnostics:{selection_policy:'hit_probability_v4',eligible_matches:0}},'banko');
+ assert.match(v4,/%45 olasılık, 1,10–2,00/);
+ const surprise=CouponView.emptyReason({surprise_diagnostics:{selection_policy:'hit_probability_v4',eligible_matches:0}},'surprise');
+ assert.match(surprise,/%33 olasılık, 1,40–3,50/);
 });
 
 test('small league alternatives render and share as distinct market-only coupons', () => {

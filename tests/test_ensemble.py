@@ -4,6 +4,7 @@ import math
 import unittest
 from datetime import datetime,timedelta,timezone
 from unittest.mock import patch
+from app.config import MODEL
 from app.model.fitted import FittedGoals
 from app.model import ensemble,adaptive_market,blend,calibration,decision_quality
 from tests.test_prediction_audit import quote_prediction,NOW
@@ -53,7 +54,7 @@ class LearnedModelTest(unittest.TestCase):
                          'actual':[1,0] if i<117 else [0,1]})
         choice=adaptive_market.choose(rows)
         self.assertEqual(choice['candidate_weight'],0)
-        self.assertEqual(choice['weight'],.5)
+        self.assertEqual(choice['weight'],MODEL['market_weight'])
         for r in rows:r['actual']=[0,1]
         self.assertEqual(adaptive_market.choose(rows)['weight'],1)
 
