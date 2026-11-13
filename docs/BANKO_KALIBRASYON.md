@@ -11,13 +11,13 @@ Bu eşikler kullanıcının isabet önceliğiyle uyumlu değildi. Yeni politika 
 ## Olasılık ve seçim
 
 1. Takım modeli; Poisson, Elo, form, haber ve dinlenme verilerini kullanır.
-2. Tam ve geçerli oran grubu varsa, marjı temizlenen piyasa olasılığıyla mevcut %50 model / %50 piyasa harmanı uygulanır.
+2. Tam ve geçerli oran grubu varsa, marjı temizlenen piyasa olasılığıyla %25 model / %75 piyasa harmanı uygulanır (`MODEL["market_weight"]`; lig/pazar kanıtı varsa `adaptive_market` ağırlığı değiştirir).
 3. Maç başlamadan önce kaydedilmiş ilk tahminlerden aynı lig/pazar/dilim için en az 30 sonuçlanmış kayıt varsa kalibrasyon uygulanır. Düzeltme 60 örneklik önselle yumuşatılır ve en fazla 8 yüzde puandır.
 4. Örnek azsa ham harmanlı tahmin korunur. `calibration_applied=false`, gerçek `calibration_n` ve `calibration_status=limited` taşınır. Bu seçim kalibre edilmiş gibi sunulmaz.
-5. Banko adayında gerçek fiyat 1,40–2,30, kullanılacak olasılık en az %62 ve her iki takımın en düşük zaman ağırlıklı maç sayısı en az 12 olmalıdır. Uygulanan kalibrasyon olasılığı %62 altına düşürürse aday elenir.
+5. Banko adayında gerçek fiyat 1,10–2,00, kullanılacak olasılık en az %45 ve her iki takımın en düşük zaman ağırlıklı maç sayısı en az 12 olmalıdır. Uygulanan kalibrasyon olasılığı %45 altına düşürürse aday elenir.
 6. Başlamış maçlar, eski/eksik gerçek oranlar, yetersiz takım verisi ve otomatik sonuçlandırılamayan pazarlar dışarıda kalır. Gerçek kaynağın oranı son 2 saat içinde güncellenmiş olmalıdır.
-7. Aynı maçtan tek seçimle 2–3 farklı maç birleştirilir. Kaynağın minimum bahis adedi korunur; toplam oran 1,90–8,00 ve tahmini ortak olasılık en az %25 olmalıdır.
-8. Kuponlar önce ortak olasılığa, eşitlikte veri/güven skoruna göre sıralanır. Daha küçük oran veya daha yüksek fiyat avantajı tek başına tercih sebebi değildir.
+7. Aynı maçtan tek seçimle 1–3 farklı maç birleştirilir. Kaynağın minimum bahis adedi (MBS) korunur: kupon, bacaklarının en yüksek MBS'si kadar maç içerir; tek maç yalnız MBS 1 bültenlerde mümkündür. Toplam oran 1,80–4,00 ve tahmini ortak olasılık en az %25 olmalıdır.
+8. Toplam-oran tabanını geçen kombinasyonlar arasında ortak olasılığı en yüksek olan seçilir; eşitlikte daha az maç, sonra daha yüksek toplam oran. Aday havuzu olasılığa ve verimliliğe (−ln p / ln oran) göre kurulur, MBS ≤ 2 maçlar havuzda tutulur. Alternatifler önce ortak maç içermeyecek şekilde seçilir. Taban tutmazsa tabana en yakın kupon `target_met=false` ile verilir.
 
 `value = p × odds − 1` bilgi alanı olarak hesaplanır; pozitif olmasına göre kupon kapatılmaz. Sürpriz ve küçük lig kuponlarının eşikleri bu değişiklikle değiştirilmez.
 

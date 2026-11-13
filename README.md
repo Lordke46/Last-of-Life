@@ -73,8 +73,10 @@ UEFA Şampiyonlar Ligi, UEFA Avrupa Ligi (`app/config.py` → `LEAGUES`).
 
 `app/model/blend.py`: iddaa.com oranından marj temizlenir (1X2 üçlü, Alt/Üst 1.5/2.5/3.5 ve KG ikili gruplar:
 `1/oran`, grup toplamına bölünür) ve model olasılığıyla `p = (1-w)·p_model + w·p_piyasa` harmanlanır;
-`w = MODEL["market_weight"]` (`app/config.py`, 0 = yalnız model). Oran yoksa (veya grup eksik/tutarsızsa)
-model olasılığı aynen kalır. Çifte şans harmanlı 1X2'den türetilir; öneri, güven, "Claude oran" ve günlük
+`w = MODEL["market_weight"]` (`app/config.py`, varsayılan 0,75; 0 = yalnız model). Varsayılan ağırlık
+piyasaya yakındır çünkü kayıtlı maç öncesi snapshot'larda yalnız piyasa Brier'i (0,496) modelden (0,547)
+daha iyidir; `adaptive_market` lig/pazar kanıtı biriktikçe bu ağırlığı aşağı/yukarı oynatabilir. Oran
+yoksa (veya grup eksik/tutarsızsa) model olasılığı aynen kalır. Çifte şans harmanlı 1X2'den türetilir; öneri, güven, "Claude oran" ve günlük
 kuponlar harmanlı olasılığı kullanır. Yanıtlarda her pazarda `model_p` / `market_p`, tahminde `blend` alanı vardır.
 
 **Backtest karşılaştırması:** geçmiş iddaa oranı tutulmadığı için (`iddaa_odds` her senkronda yeniden yazılır)
@@ -98,10 +100,21 @@ Adil oran = 1/olasılık. Arayüzde iddaa.com oranı ana değer, modelin öneril
 etiketiyle gösterilir. Maç detayında iddaa oranı otomatik doldurulur ve model olasılığına göre beklenen
 değer (EV) ile ¼ Kelly hesaplanır; isterseniz alanı değiştirerek başka bir oranı deneyebilirsiniz.
 
-**Günlük Kupon** sekmesi seçilen günün (Türkiye saati, tüm ligler, başlamamış maçlar) iki kuponunu kurar:
-- **Banko**: 2-3 maç, maç başı ≥%75, toplam tutma ≥%50, oran ≥1.15; her maçtan tek seçim.
-- **Sürpriz**: 3-5 farklı maç, toplam oran ≥15; adaylar EV'ye (olasılık × oran − 1) göre sıralanır, şartı
-  sağlayan en olası kombinasyon seçilir.
+**Günlük Kupon** sekmesi seçilen günün (Türkiye saati, bültendeki tüm ligler, başlamamış maçlar) kuponlarını
+kurar. Seçim politikası `hit_probability_v4` (`app/model/coupons.py`, `TIERS`): her kupon türü için bir
+toplam-oran tabanı vardır ve bu tabanın üstünde **ortak tutma olasılığı en yüksek** kombinasyon seçilir.
+iddaa marjı her bacakta yeniden ödendiği için daha az maç daima daha olasıdır; bu yüzden MBS 1–2 maçlar
+(tek/iki maç oynanabilen Milli takım, alt lig vb.) havuzda korunur ve bültenin MBS kuralı kupon boyutuna
+uygulanır (kupon en az bacaklarının en yüksek MBS'si kadar maç içerir).
+- **Banko**: 1–3 maç, bacak 1,10–2,00 ve ≥%45, toplam oran 1,80–4,00, ortak olasılık ≥%25.
+- **Sürpriz**: 2–4 maç, bacak 1,40–3,50 ve ≥%33, toplam oran 4,50–15, ortak olasılık ≥%7 (yüksek oran ama
+  piyango değil).
+- Her tür için 3 alternatif üretilir; alternatifler önce **ortak maç içermeyecek** şekilde seçilir.
+- Hedef bandı tutmazsa kupon boş kalmaz: en yakın uygun kombinasyon `target_met=false` /
+  `selection_tier=available_fallback` ile verilir, Telegram mesajında “hedef bandı dışı” yazar.
+
+Beklenen getiri yine negatiftir (iddaa marjı ≈%20/pazar: tek maçta ≈−%14, üç maçta ≈−%42); motor tutma
+olasılığını azamileştirir, kâr vaat etmez.
 
 Kuponda oran olarak eşleşen **iddaa** oranı kullanılır; o pazarda iddaa oranı yoksa **Claude oran**'a düşülür.
 Her satırda ve kupon başlığında hangisinin kullanıldığı yazar. Şartı sağlayan seçim yoksa kupon boş döner.

@@ -117,9 +117,11 @@ MODEL = {
     "first_half_goal_share": 0.45,  # toplam xG'nin ilk yarıya ayrılan payı
     "margin": 0.05,  # önerilen orana eklenen kâr marjı (%5)
     # iddaa.com oranlarından marjı temizlenmiş olasılıkların harmanlama ağırlığı: 0 = yalnız model,
-    # 1 = yalnız piyasa. Oran yoksa model olasılığı aynen kalır. Ağırlığı Model sekmesindeki
-    # harmanlı/harmansız karşılaştırma (log-loss taraması) biriktikçe ayarlayın.
-    "market_weight": 0.5,
+    # 1 = yalnız piyasa. Oran yoksa model olasılığı aynen kalır. İlk 100 maç öncesi snapshot'ta
+    # Brier piyasa 0,496 < 50/50 harman 0,518 < model 0,547 ölçüldü (docs/benchmarks); bu yüzden
+    # varsayılan piyasa ağırlıklıdır, model yalnız eşit fiyatlı seçimler arasında yön verir.
+    # adaptive_market yeterli kanıt biriktiğinde pazar grubuna göre bu değeri geçersiz kılar.
+    "market_weight": 0.75,
     "disagreement_review_pp": 20.0,  # İnceleme eşiği; optimize edildiği iddia edilmez.
 }
 

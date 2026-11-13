@@ -24,17 +24,43 @@ from ..scrapers.iddaa import load_constraints
 TZ = ZoneInfo("Europe/Istanbul")
 LOOKAHEAD_DAYS = 60
 
-BANKO_MIN_P, BANKO_MIN_ODDS, BANKO_MAX_ODDS = .70, 1.15, 2.30
-BANKO_MIN_TOTAL_P = .50
+# Kupon hedefleri. Amaç: toplam oran tabanının üstünde kalan kuponlar arasında ortak tutma
+# olasılığını en yükseğe çıkarmak. iddaa her pazara ~%20 marj bastığından (Σ1/oran ≈ 1,20)
+# aynı toplam orana daha az bacakla ulaşmak her zaman daha olasıdır; bu yüzden sağlayıcının
+# MBS 1–2 verdiği maçlar az bacaklı kuponda doğal olarak öne çıkar.
+TIERS = {
+    "banko": {
+        "picks": (1, 3),            # tek maç yalnız MBS 1 verilen seçimde mümkündür
+        "leg_odds": (1.10, 2.00),
+        "leg_min_p": .45,
+        "total_odds": (1.80, 4.00),
+        "min_total_p": .25,
+        "pool": 14, "alternatives": 3,
+        "fallback": "in_band_first",   # hedef tutmazsa önce yüksek olasılıklı bacaklar
+    },
+    "surprise": {
+        "picks": (2, 4),
+        "leg_odds": (1.40, 3.50),
+        "leg_min_p": .33,           # şansa değil, hâlâ makul olasılığa dayanan yüksek oran
+        "total_odds": (4.50, 15.0),
+        "min_total_p": .07,
+        "pool": 14, "alternatives": 3,
+        "fallback": "total_first",     # hedef tutmazsa önce toplam oran aralığı
+    },
+}
+LOW_MBS_BONUS = 4  # MBS ≤ 2 maçlardan havuza ek alınacak en iyi aday sayısı
+BANKO_MIN_P, BANKO_MIN_ODDS, BANKO_MAX_ODDS = TIERS["banko"]["leg_min_p"], *TIERS["banko"]["leg_odds"]
+BANKO_MIN_TOTAL_P = TIERS["banko"]["min_total_p"]
+BANKO_MIN_TOTAL_ODDS, BANKO_MAX_TOTAL_ODDS = TIERS["banko"]["total_odds"]
 BANKO_MIN_EDGE = None  # İsabet önceliğinde pozitif beklenen değer bir eleme koşulu değildir.
 BANKO_MIN_DATA_N = 12
-BANKO_PICKS, BANKO_POOL, BANKO_ALTERNATIVES = (2, 3), 14, 3
-SURPRISE_MIN_P, SURPRISE_MAX_P = .38, .70
-SURPRISE_MIN_ODDS, SURPRISE_MAX_ODDS = 1.80, 3.50
-SURPRISE_MIN_TOTAL_ODDS, SURPRISE_MAX_TOTAL_ODDS = 8.0, 25.0
-SURPRISE_PICKS, SURPRISE_POOL, SURPRISE_ALTERNATIVES = (3, 4), 14, 3
+BANKO_PICKS, BANKO_POOL, BANKO_ALTERNATIVES = TIERS["banko"]["picks"], TIERS["banko"]["pool"], TIERS["banko"]["alternatives"]
+SURPRISE_MIN_P, SURPRISE_MAX_P = TIERS["surprise"]["leg_min_p"], 1.0
+SURPRISE_MIN_ODDS, SURPRISE_MAX_ODDS = TIERS["surprise"]["leg_odds"]
+SURPRISE_MIN_TOTAL_ODDS, SURPRISE_MAX_TOTAL_ODDS = TIERS["surprise"]["total_odds"]
+SURPRISE_PICKS, SURPRISE_POOL, SURPRISE_ALTERNATIVES = TIERS["surprise"]["picks"], TIERS["surprise"]["pool"], TIERS["surprise"]["alternatives"]
 SURPRISE_MARKETS = SUPPORTED_MARKETS
-SELECTION_POLICY = 'daily_v3'
+SELECTION_POLICY = 'hit_probability_v4'
 
 MAX_COUPON_ODDS_AGE = timedelta(hours=2)
 
@@ -167,20 +193,77 @@ def _coupon(kind: str, picks: list[dict], note: str) -> dict:
             "total_probability": round(math.prod(p["p"] for p in picks), 4) if picks else 0}
 
 
+def _efficiency(p: float, odds: float) -> float:
+    """Oran tabanına ulaşmanın olasılık maliyeti: −ln p / ln oran. Adil fiyatta 1; düşük = iyi.
+
+    Sabit toplam oran altında ortak olasılığı en yükseğe çıkaran kupon, bu maliyeti en düşük
+    bacaklardan kurulur; bu yüzden hem havuz sıralaması hem bacak seçimi bu ölçüyü kullanır.
+    """
+    return -math.log(p) / math.log(odds)
+
+
+def _in_band(choice: dict, tier: dict) -> bool:
+    lo, hi = tier["leg_odds"]
+    return lo <= choice["odds"] <= hi and choice["p"] >= tier["leg_min_p"]
+
+
+def _shortlist(candidates: list[dict], tier: dict) -> list[dict]:
+    """Aynı maç için her MBS sınıfında en fazla üç seçenek: en olası, bant içinde en verimli,
+    bant içinde en yüksek oranlı. Yüksek MBS'li bir pazar, aynı maçın daha düşük MBS'li
+    kullanılabilir seçeneğini gizleyemez."""
+    selected = []
+    for required in sorted({c["min_matches"] for c in candidates}):
+        group = [c for c in candidates if c["min_matches"] == required]
+        in_band = [c for c in group if _in_band(c, tier)]
+        for pick in (max(group, key=lambda c: (c["p"], c["odds"])),
+                     min(in_band, key=lambda c: (_efficiency(c["p"], c["odds"]), -c["p"])) if in_band else None,
+                     max(in_band, key=lambda c: (c["odds"], c["p"])) if in_band else None):
+            if pick is not None and pick not in selected:
+                selected.append(pick)
+    return selected
+
+
+def _pool(matches: list[tuple[dict, list[dict]]], tier: dict) -> list[tuple[dict, list[dict]]]:
+    """Havuz: bant içi verimliliğe göre en iyiler + en olasılar + MBS ≤ 2 veren en iyi maçlar."""
+    def best_eff(item):
+        in_band = [c for c in item[1] if _in_band(c, tier)]
+        return min((_efficiency(c["p"], c["odds"]) for c in in_band), default=math.inf)
+    def best_p(item):
+        return max(c["p"] for c in item[1])
+    size = tier["pool"]
+    by_eff = sorted(matches, key=lambda m: (best_eff(m), -best_p(m), m[0]["kickoff"], str(m[0]["id"])))
+    by_p = sorted(matches, key=lambda m: (-best_p(m), m[0]["kickoff"], str(m[0]["id"])))
+    low_mbs = [m for m in by_eff if any(c["min_matches"] <= 2 for c in m[1])]
+    pool, seen = [], set()
+    for item in [*by_eff[:size // 2], *by_p[:size - size // 2], *low_mbs[:LOW_MBS_BONUS]]:
+        key = str(item[0]["id"])
+        if key not in seen:
+            pool.append(item); seen.add(key)
+    return pool
+
+
 def _select_balanced(entries, kind, limit, diagnostics=None):
-    """Select a preferred target coupon, or the best real-price fallback available."""
+    """Hedef kuponu, yoksa gerçek fiyatlı en iyi alternatifi seç.
+
+    Puanlama: hedefi sağlayan kombinasyonlar arasında en yüksek ortak olasılık; eşitlikte daha az
+    maç, sonra daha yüksek toplam oran. Hedef yoksa türün `fallback` sırasına göre bant içi
+    bacaklar veya toplam oran aralığı önceliklidir; seçim `target_met=False` ile etiketlenir.
+    """
     if limit <= 0:
         return []
+    tier = TIERS[kind]
     banko = kind == 'banko'
-    p_min, p_max = (BANKO_MIN_P, 1) if banko else (SURPRISE_MIN_P, SURPRISE_MAX_P)
-    o_min, o_max = (BANKO_MIN_ODDS, BANKO_MAX_ODDS) if banko else (SURPRISE_MIN_ODDS, SURPRISE_MAX_ODDS)
+    sizes = tier["picks"]
+    t_lo, t_hi = tier["total_odds"]
     pool, seen = [], set()
     counts = {"matches": len(entries), "insufficient_data": 0, "stale_odds": 0, "no_market_quote": 0,
               "low_probability": 0, "odds_out_of_range": 0,
               "calibration_insufficient": 0, "calibration_best_n": 0,
               "calibration_min_samples": calibration.MIN_SAMPLES,
-              "selection_policy": SELECTION_POLICY,
-              "eligible_matches": 0, "combinations_rejected": 0, "valid_combinations": 0, "quality_rejected":0, "not_prematch":0}
+              "selection_policy": SELECTION_POLICY, "objective": "max_joint_probability_above_total_odds_floor",
+              "total_odds_floor": t_lo,
+              "eligible_matches": 0, "low_mbs_matches": 0,
+              "combinations_rejected": 0, "valid_combinations": 0, "quality_rejected":0, "not_prematch":0}
     for prediction, choices in entries:
         mid = str(prediction.get('id',''))
         if not mid or mid in seen:
@@ -221,7 +304,7 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
                 required_matches = max(1, int(choice.get("min_matches", 1) or 1))
             except (TypeError, ValueError):
                 required_matches = 1
-            if required_matches > (BANKO_PICKS[1] if banko else SURPRISE_PICKS[1]):
+            if required_matches > sizes[1]:
                 counts["combinations_rejected"] += 1
                 continue
             choice = {**choice, "min_matches": required_matches}
@@ -236,85 +319,75 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
                 conf['confidence']=min(conf['confidence'],.69)
                 conf['confidence_label']=P.confidence_label(conf['confidence'])
                 conf['confidence_reason']+='; kalibrasyon kanıtı yetersiz'
-            candidates.append({**choice, **conf, 'value': round(choice['p']*choice['odds']-1,4)})
+            candidates.append({**choice, **conf, 'value': round(choice['p']*choice['odds']-1,4),
+                               'efficiency': round(_efficiency(choice['p'], choice['odds']), 4)})
         if candidates:
             counts["eligible_matches"] += 1
-            # Keep an option in each feasible MBS class so an impossible high-MBS
-            # market cannot hide a usable lower-MBS choice for the same fixture.
-            selected = []
-            for required in sorted({c["min_matches"] for c in candidates}):
-                group = [c for c in candidates if c["min_matches"] == required]
-                best_probability = max(group, key=lambda c: (c["p"], c["odds"]))
-                if best_probability not in selected:
-                    selected.append(best_probability)
-                if banko:
-                    in_band = [c for c in group if BANKO_MIN_ODDS <= c["odds"] <= BANKO_MAX_ODDS]
-                else:
-                    in_band = [c for c in group if (SURPRISE_MIN_P <= c["p"] <= SURPRISE_MAX_P
-                                                       and SURPRISE_MIN_ODDS <= c["odds"] <= SURPRISE_MAX_ODDS)]
-                if in_band:
-                    preferred = max(in_band, key=lambda c: c["odds"])
-                    if preferred not in selected:
-                        selected.append(preferred)
-            pool.append((prediction,selected)); seen.add(mid)
-    pool.sort(key=lambda x:(-x[1][0]['p'], x[0]['kickoff']))
-    pool = pool[:BANKO_POOL if banko else SURPRISE_POOL]
-    sizes = BANKO_PICKS if banko else SURPRISE_PICKS
-    target_candidates, fallback_candidates, fallback_in_band = [], [], []
-    max_size = sizes[1]
-    for size in range(1, min(max_size, len(pool))+1):
+            if any(c["min_matches"] <= 2 for c in candidates):
+                counts["low_mbs_matches"] += 1
+            pool.append((prediction, _shortlist(candidates, tier))); seen.add(mid)
+    pool = _pool(pool, tier)
+    target_candidates, fallback_in_band, fallback_total, fallback_any = [], [], [], []
+    for size in range(1, min(sizes[1], len(pool))+1):
         for match_combo in combinations(pool,size):
             for choices in product(*(cs for _,cs in match_combo)):
                 combo = [(pair[0],choice) for pair,choice in zip(match_combo,choices)]
-                if size < max(c.get('min_matches',1) for _,c in combo):
+                if size < max(c['min_matches'] for _,c in combo):
                     counts["combinations_rejected"] += 1
                     continue
                 probability = math.prod(c['p'] for _,c in combo)
                 total = math.prod(c['odds'] for _,c in combo)
-                preferred_size = sizes[0] <= size <= sizes[1]
-                if banko:
-                    target_met = (preferred_size and all(BANKO_MIN_P <= c['p'] < 1 for _, c in combo)
-                                  and probability >= BANKO_MIN_TOTAL_P and 1.30 <= total <= 8
-                                  and all(BANKO_MIN_ODDS <= c['odds'] <= BANKO_MAX_ODDS for _, c in combo))
-                else:
-                    target_met = (preferred_size and all(SURPRISE_MIN_P <= c['p'] <= SURPRISE_MAX_P for _, c in combo)
-                                  and probability >= .04 and SURPRISE_MIN_TOTAL_ODDS <= total <= SURPRISE_MAX_TOTAL_ODDS
-                                  and all(SURPRISE_MIN_ODDS <= c['odds'] <= SURPRISE_MAX_ODDS for _, c in combo))
+                in_band = all(_in_band(c, tier) for _, c in combo)
+                total_ok = t_lo <= total <= t_hi
+                target_met = (sizes[0] <= size <= sizes[1] and in_band and total_ok
+                              and probability >= tier["min_total_p"])
                 signature = frozenset((str(p['id']),c['market']) for p,c in combo)
-                if banko or target_met:
+                if target_met:
                     score = (probability, -size, total)
-                elif SURPRISE_MIN_TOTAL_ODDS <= total <= SURPRISE_MAX_TOTAL_ODDS:
-                    score = (1, probability, -size)
+                elif total_ok:
+                    score = (probability, -size, total)
+                elif in_band:
+                    # Bant içi ama toplam oran tabanının altı: önce tabana yakınlık, sonra olasılık.
+                    score = (-abs(total - t_lo), probability, -size)
                 else:
-                    distance = min(abs(total-SURPRISE_MIN_TOTAL_ODDS), abs(total-SURPRISE_MAX_TOTAL_ODDS))
-                    score = (0, -distance, probability, -size)
+                    distance = min(abs(total-t_lo), abs(total-t_hi))
+                    score = (-distance, probability, -size)
                 record = (score, combo, signature, target_met, probability, total)
                 if target_met:
                     target_candidates.append(record)
-                if banko:
-                    if all(BANKO_MIN_ODDS <= c['odds'] <= BANKO_MAX_ODDS for _,c in combo):
-                        fallback_in_band.append(record)
-                    fallback_candidates.append(record)
+                elif total_ok:
+                    fallback_total.append(record)
+                elif in_band:
+                    fallback_in_band.append(record)
                 else:
-                    fallback_candidates.append(record)
+                    fallback_any.append(record)
     counts["valid_combinations"] = len(target_candidates)
-    candidates = target_candidates or fallback_in_band or fallback_candidates
-    candidates = heapq.nlargest(max(1, limit * 8), candidates, key=lambda item: item[0])
-    out, used = [], set()
-    for _, combo, signature, target_met, probability, total in candidates:
-        if signature in used or any(signature <= other or other <= signature for other in used):
-            continue
-        picks = []
-        for prediction, choice in sorted(combo,key=lambda x:x[0]['kickoff']):
-            pick = _match_view(prediction, choice)
-            pick.update(selection_tier="preferred" if target_met else "available_fallback",
-                        target_met=target_met)
-            if prediction.get("small_league"):
-                pick.update(confidence=None, confidence_label="Model güveni yok",
-                            probability_source="iddaa_market", market_only=True)
-            picks.append(pick)
-        out.append(picks);used.add(signature)
-        if len(out)>=limit:break
+    order = ((fallback_in_band, fallback_total) if tier["fallback"] == "in_band_first"
+             else (fallback_total, fallback_in_band))
+    candidates = target_candidates or order[0] or order[1] or fallback_any
+    candidates = heapq.nlargest(max(1, limit * 12), candidates, key=lambda item: item[0])
+    # Alternatifler önce ortak maçı olmayan kuponlardan seçilir ki kullanıcı gerçekten farklı
+    # kuponlar görsün; yetmezse alt/üst küme olmayan örtüşen kombinasyonlar eklenir.
+    out, used, used_matches = [], set(), set()
+    matches_of = lambda signature: {match for match, _ in signature}
+    for disjoint_only in (True, False):
+        for _, combo, signature, target_met, probability, total in candidates:
+            if len(out) >= limit:
+                break
+            if signature in used or any(signature <= other or other <= signature for other in used):
+                continue
+            if disjoint_only and matches_of(signature) & used_matches:
+                continue
+            picks = []
+            for prediction, choice in sorted(combo,key=lambda x:x[0]['kickoff']):
+                pick = _match_view(prediction, choice)
+                pick.update(selection_tier="preferred" if target_met else "available_fallback",
+                            target_met=target_met)
+                if prediction.get("small_league"):
+                    pick.update(confidence=None, confidence_label="Model güveni yok",
+                                probability_source="iddaa_market", market_only=True)
+                picks.append(pick)
+            out.append(picks); used.add(signature); used_matches |= matches_of(signature)
     if diagnostics is not None:
         diagnostics.update(counts)
         diagnostics["selected_coupons"] = len(out)
@@ -451,8 +524,8 @@ def build_coupons(target: date) -> dict:
             pick["league_name"] = grouped[pick["id"]]["league_name"]
             pick["country"] = grouped[pick["id"]]["country"]
     daily_entries = entries + small_entries
-    banko_note = "Banko hedefi: 2–3 farklı maç, gerçek oran 1,15–2,30, tek seçim olasılığı en az %70 ve toplam olasılık en az %50. Hedef tutmazsa mevcut gerçek fiyatlı seçimlerden en yüksek ortak olasılıklı alternatif sunulur; seçimde hedef durumu ayrıca belirtilir. Küçük lig olasılıkları yalnız piyasadan gelir ve takım modeli güveni taşımaz. Toplam olasılık maçların bağımsızlığı varsayımıyla hesaplanır; garanti değildir."
-    surprise_note = "Sürpriz hedefi: 3–4 farklı maç, gerçek oran 1,80–3,50, olasılık %38–70 ve kupon toplam oranı 8–25. Hedef mümkün değilse mevcut gerçek fiyatlı alternatifin toplam oranı hedef aralığına yakınlığı ve olasılığına göre seçilir; hedef durumu ayrıca belirtilir. Daha yüksek risk taşır."
+    banko_note = _tier_note("banko")
+    surprise_note = _tier_note("surprise")
     banko_diagnostics = {}
     banko_alternatives = [_coupon("banko", picks, banko_note)
                           for picks in _select_balanced(daily_entries, "banko", BANKO_ALTERNATIVES, banko_diagnostics)]
@@ -476,14 +549,38 @@ def build_coupons(target: date) -> dict:
         "small_league_alternatives": [_coupon("small", picks,
             "Bu kupon iddaa piyasa olasılıklarına dayanır; takım modeli güveni hesaplanmaz.")
             for picks in small_alternatives],
-        "rules": {"banko_min_probability": BANKO_MIN_P, "banko_min_total_probability": BANKO_MIN_TOTAL_P,
+        "rules": {"selection_policy": SELECTION_POLICY,
+                  "objective": "max_joint_probability_above_total_odds_floor",
+                  "banko_min_probability": BANKO_MIN_P, "banko_min_total_probability": BANKO_MIN_TOTAL_P,
                   "banko_min_edge": BANKO_MIN_EDGE, "banko_min_data_n": BANKO_MIN_DATA_N,
                   "banko_min_calibration_samples": calibration.MIN_SAMPLES,
                   "banko_calibration_required": False, "banko_objective": "hit_probability",
-                  "banko_min_odds": BANKO_MIN_ODDS,
+                  "banko_min_odds": BANKO_MIN_ODDS, "banko_total_odds": list(TIERS["banko"]["total_odds"]),
                   "surprise_probability_range": [SURPRISE_MIN_P, SURPRISE_MAX_P],
-                  "surprise_min_total_odds": SURPRISE_MIN_TOTAL_ODDS},
+                  "surprise_min_total_odds": SURPRISE_MIN_TOTAL_ODDS,
+                  "tiers": {kind: {k: (list(v) if isinstance(v, tuple) else v) for k, v in tier.items()}
+                            for kind, tier in TIERS.items()}},
     }
+
+
+def _tier_note(kind: str) -> str:
+    tier = TIERS[kind]
+    fmt = lambda x: f"{x:.2f}".replace(".", ",").rstrip("0").rstrip(",")
+    legs = f"{tier['picks'][0]}–{tier['picks'][1]}"
+    common = (f"gerçek oran {fmt(tier['leg_odds'][0])}–{fmt(tier['leg_odds'][1])}, tek seçim olasılığı en az "
+              f"%{tier['leg_min_p']*100:.0f}, kupon toplam oranı {fmt(tier['total_odds'][0])}–{fmt(tier['total_odds'][1])}. "
+              "Bu sınırlar içinde ortak tutma olasılığı en yüksek kupon seçilir; eşitlikte daha az maç tercih edilir. "
+              "iddaa her pazara yaklaşık %20 marj bastığından aynı toplam orana daha az maçla ulaşmak daha olasıdır; "
+              "sağlayıcının minimum bahis adedi (MBS) 1–2 verdiği maçlar bu yüzden öne çıkabilir. ")
+    if kind == "banko":
+        return (f"Banko hedefi: {legs} farklı maç, " + common +
+                "Hedef tutmazsa önce bant içi seçimlerden tabana en yakın, sonra en olası alternatif sunulur; "
+                "hedef durumu ayrıca belirtilir. Küçük lig olasılıkları yalnız piyasadan gelir ve takım modeli güveni "
+                "taşımaz. Toplam olasılık maçların bağımsızlığı varsayımıyla hesaplanır; garanti değildir.")
+    return (f"Sürpriz hedefi: {legs} farklı maç, " + common +
+            "Sürpriz şansa değil, hâlâ makul olasılığı olan yüksek oranlı seçimlere dayanır. Hedef mümkün değilse "
+            "önce toplam oran aralığını sağlayan, sonra bant içi en olası alternatif seçilir; hedef durumu ayrıca "
+            "belirtilir. Daha yüksek risk taşır.")
 
 
 def _small_prediction_for_coupon(event):

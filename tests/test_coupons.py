@@ -49,17 +49,48 @@ class OddsSourceTest(unittest.TestCase):
 class BankoTest(unittest.TestCase):
     def test_mid_price_high_confidence_and_one_pick_per_match(self):
         entries=[entry(1,{"1X":(.94,1.05),"1":(.72,1.70)}),entry(2,{"2":(.70,1.65)}),entry(3,{"1":(.65,1.8)})]
+        for _,choices in entries:
+            for choice in choices: choice['min_matches']=2
         picks=select_banko(entries)
         self.assertEqual(len(picks),2)
-        self.assertEqual([p['id'] for p in picks],[1,2])
-        self.assertTrue(all(1.4<=p['odds']<=2.3 and p['odds_source']=='iddaa' for p in picks))
+        self.assertEqual(len({p['id'] for p in picks}),2)
+        self.assertTrue(all(1.10<=p['odds']<=2.00 and p['odds_source']=='iddaa' for p in picks))
+        # 1X at 1.05 is below the leg band; the floor is reached with the most probable in-band legs.
         self.assertNotIn('1X',[p['market'] for p in picks])
+        self.assertGreaterEqual(math.prod(p['odds'] for p in picks),cp.BANKO_MIN_TOTAL_ODDS)
+        self.assertEqual([p['id'] for p in picks],[1,2])
+
+    def test_single_on_mbs_one_fixture_beats_multi_leg_at_same_payout(self):
+        # Same total odds: every extra leg pays the bookmaker margin again, so the
+        # single with MBS 1 has the higher joint probability and wins.
+        single = entry(1, {"1": (.47, 1.85)})
+        pair = [entry(i, {"1": (.62, 1.36)}) for i in (2, 3)]
+        for _, choices in pair:
+            for choice in choices: choice['min_matches'] = 2
+        picks = select_banko([single, *pair])
+        self.assertEqual([p['id'] for p in picks], [1])
+        self.assertTrue(picks[0]['target_met'])
+        single[1][0]['min_matches'] = 3  # provider demands a triple: the pair is now the best
+        picks = select_banko([single, *pair])
+        self.assertEqual([p['id'] for p in picks], [2, 3])
+
+    def test_banko_prefers_highest_probability_above_floor_not_highest_total(self):
+        entries = [entry(1, {"1X": (.80, 1.25), "1": (.55, 1.75)}), entry(2, {"1X": (.78, 1.30), "1": (.52, 1.80)})]
+        for _, choices in entries:
+            for choice in choices: choice['min_matches'] = 2
+        picks = select_banko(entries)
+        total = math.prod(p['odds'] for p in picks)
+        self.assertGreaterEqual(total, cp.BANKO_MIN_TOTAL_ODDS)
+        # 1.75×1.30=2.275 with p=.429 beats both the 1X pair (1.625, under the floor) and 1×1 (3.15, p=.286).
+        self.assertEqual([p['market'] for p in picks], ['1', '1X'])
+        self.assertAlmostEqual(math.prod(p['p'] for p in picks), .429)
 
     def test_hit_rate_policy_does_not_require_positive_expected_profit(self):
         entries = [entry(i, {"1": (.72, 1.30)}) for i in (1, 2, 3)]
         picks = select_banko(entries)
-        self.assertEqual(len(picks), 2)
+        self.assertEqual(len(picks), 3)  # two legs (1.69) stay under the total-odds floor
         self.assertTrue(all(p["value"] < 0 for p in picks))
+        self.assertTrue(picks[0]["target_met"])
 
     def test_banko_discloses_uncalibrated_estimates_without_blocking_them(self):
         entries = [entry(i, {"1": (.75, 1.65)}) for i in (1, 2, 3)]
@@ -102,7 +133,7 @@ class BankoTest(unittest.TestCase):
         self.assertGreater(report["calibration_insufficient"], 0)
 
     def test_banko_diagnostics_explain_missing_picks(self):
-        entries = [entry(i, {"1": (.61, 1.40)}) for i in (1, 2)]
+        entries = [entry(i, {"1": (.61, 1.25)}) for i in (1, 2)]  # 1.56 total cannot reach the floor
         report = {}
         picks = cp._select_balanced(entries, "banko", 1, report)
         self.assertTrue(picks)
@@ -117,7 +148,7 @@ class BankoTest(unittest.TestCase):
 
     def test_applied_calibration_still_controls_the_probability_threshold(self):
         prediction = pred(1, {"1": (.75, 1.65)})
-        prediction["calibration_by_market"]["1"].update(p=.60)
+        prediction["calibration_by_market"]["1"].update(p=.40)
         entries = [(prediction, _choices(prediction, {"1": 1.65})), entry(2, {"1": (.75, 1.65)})]
         picks = select_banko(entries)
         self.assertTrue(picks)
@@ -171,15 +202,19 @@ class BankoTest(unittest.TestCase):
         self.assertTrue(picks)
         self.assertNotIn("1", [p["market"] for p in picks if p["id"] == 1])
 
-    def test_banko_cannot_trade_hit_probability_for_an_odds_floor(self):
+    def test_banko_reaches_total_odds_floor_with_most_probable_legs(self):
         entries=[entry(i,{'Ü1.5':(.84,1.20),'1':(.71,1.7)}) for i in (1,2)]
+        for _,choices in entries:
+            for choice in choices: choice['min_matches']=2
         picks=select_banko(entries)
-        self.assertEqual([p['market'] for p in picks],['Ü1.5','Ü1.5'])
-        self.assertAlmostEqual(math.prod(p['odds'] for p in picks),1.44)
-        self.assertGreaterEqual(math.prod(p['p'] for p in picks),.50)
-        fallback = select_banko([entry(i,{'1':(.70,1.6)}) for i in (1,2)])
+        self.assertEqual(sorted(p['market'] for p in picks),['1','Ü1.5'])  # 1.44 misses the floor; 2.89 is less likely
+        self.assertAlmostEqual(math.prod(p['odds'] for p in picks),2.04)
+        self.assertAlmostEqual(math.prod(p['p'] for p in picks),.5964)
+        self.assertTrue(picks[0]["target_met"])
+        fallback = select_banko([entry(i,{'Ü1.5':(.84,1.20)}) for i in (1,2)])
         self.assertTrue(fallback)
         self.assertFalse(fallback[0]["target_met"])
+        self.assertEqual(len(fallback),2)
 
     def test_low_price_and_longshots_do_not_force_a_coupon(self):
         for odds in (1.08,3.5):
@@ -196,18 +231,24 @@ class BankoTest(unittest.TestCase):
 
 class SurpriseTest(unittest.TestCase):
     def test_bounded_odds_probability_and_unique_matches(self):
-        picks=select_surprise([entry(i,{'1':(.5,2.2),'X':(.2,9)}) for i in range(1,6)])
+        entries=[entry(i,{'1':(.5,2.2),'X':(.2,9)}) for i in range(1,6)]
+        for _,choices in entries:
+            for choice in choices: choice['min_matches']=3
+        picks=select_surprise(entries)
         self.assertEqual(len(picks),3)
         self.assertEqual(len({p['id'] for p in picks}),3)
-        self.assertTrue(8<=math.prod(p['odds'] for p in picks)<=25)
+        self.assertTrue(cp.SURPRISE_MIN_TOTAL_ODDS<=math.prod(p['odds'] for p in picks)<=cp.SURPRISE_MAX_TOTAL_ODDS)
         self.assertTrue(all(p['market']=='1' for p in picks))
+        self.assertTrue(picks[0]['target_met'])
+        # Without the provider's triple requirement, two legs reach the floor with a higher joint probability.
+        self.assertEqual(len(select_surprise([entry(i,{'1':(.5,2.2),'X':(.2,9)}) for i in range(1,6)])),2)
 
     def test_fallback_prefers_feasible_total_odds_band_over_lottery_total(self):
         entries = [entry(i, {"X": (.30, 2.5), "2": (.20, 9.0)}) for i in range(1, 5)]
         picks = select_surprise(entries)
         self.assertTrue(picks)
         self.assertFalse(picks[0]["target_met"])
-        self.assertTrue(8 <= math.prod(p["odds"] for p in picks) <= 25)
+        self.assertTrue(cp.SURPRISE_MIN_TOTAL_ODDS <= math.prod(p["odds"] for p in picks) <= cp.SURPRISE_MAX_TOTAL_ODDS)
         self.assertTrue(all(p["odds"] == 2.5 for p in picks))
 
     def test_lottery_odds_and_synthetic_quotes_are_excluded(self):
@@ -218,9 +259,10 @@ class SurpriseTest(unittest.TestCase):
 
     def test_alternate_market_can_reach_target_without_adding_a_match(self):
         picks=select_surprise([entry(i,{'1':(.65,1.9),'Ü2.5':(.6,2.3)}) for i in range(1,4)])
-        self.assertEqual(len(picks),3)
-        self.assertTrue(8<=math.prod(p['odds'] for p in picks)<=25)
+        self.assertEqual(len(picks),2)  # 1.9×1.9=3.61 misses the floor; 2.3×2.3=5.29 reaches it
+        self.assertTrue(cp.SURPRISE_MIN_TOTAL_ODDS<=math.prod(p['odds'] for p in picks)<=cp.SURPRISE_MAX_TOTAL_ODDS)
         self.assertTrue(any(p['market']=='Ü2.5' for p in picks))
+        self.assertTrue(picks[0]['target_met'])
 
 
 class CouponAlternativesTest(unittest.TestCase):
@@ -237,6 +279,7 @@ class CouponAlternativesTest(unittest.TestCase):
             for other in signatures[index + 1:]:
                 self.assertFalse(signature <= other or other <= signature)
         self.assertEqual({p["league"] for p in alternatives[0]}, {"eng.1", "tur.1"})
+        self.assertEqual({p["league"] for p in alternatives[1]}, {"esp.1", "ger.1"})  # disjoint alternative first
         self.assertTrue(all(p["id"] != 9 for coupon in alternatives for p in coupon))
         self.assertEqual(alternatives[0], select_banko(entries + [small]))
 
@@ -249,7 +292,9 @@ class CouponAlternativesTest(unittest.TestCase):
         signatures = [frozenset(p["id"] for p in coupon) for coupon in alternatives]
         self.assertEqual(len(alternatives), 3)
         self.assertEqual(len(signatures), len(set(signatures)))
-        self.assertEqual({p["league"] for p in alternatives[0]}, {"eng.1", "tur.1", "esp.1"})
+        self.assertEqual({p["league"] for p in alternatives[0]}, {"eng.1", "tur.1"})
+        # Alternatives share no fixture while disjoint coupons are available.
+        self.assertFalse(signatures[0] & signatures[1])
         self.assertTrue(all(p["id"] != 9 for coupon in alternatives for p in coupon))
         self.assertEqual(alternatives[0], select_surprise(entries + [small]))
 
@@ -435,8 +480,10 @@ class BuildCouponsTest(unittest.TestCase):
         self.assertTrue(result["surprise"]["picks"])
         self.assertEqual(result["banko"]["picks"][0]["probability_source"], "iddaa_market")
         self.assertEqual(result["surprise"]["picks"][0]["probability_source"], "iddaa_market")
-        self.assertEqual(result["banko"]["selection_tier"], "available_fallback")
-        self.assertFalse(result["banko"]["target_met"])
+        # Three market favourites at 1.30 reach the total-odds floor (2.20) with joint p ≈ .31.
+        self.assertEqual(result["banko"]["selection_tier"], "preferred")
+        self.assertTrue(result["banko"]["target_met"])
+        self.assertEqual(len(result["banko"]["picks"]), 3)
         self.assertEqual(result["surprise"]["selection_tier"], "available_fallback")
         self.assertFalse(result["surprise"]["target_met"])
         self.assertEqual(result["banko"]["calibration_status"], "not_applicable")
