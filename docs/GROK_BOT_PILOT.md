@@ -28,7 +28,7 @@ Bölüm 1–3 üretimde **tamamlandı**; sırada yalnız bölüm 4 (Grok Bot) ve
 | Servis anahtarı `grokbot` (son kullanma 2027-06-01) | kurulu; eski `grok-prod` anahtarı Codex pilotundan kaldı, dokunulmadı |
 | GitHub environment `research-pilot` (2 secret + 2 variable) | kurulu; `GROK_BOT_WEBHOOK_URL/KEY` ve repo `RESEARCH_PILOT_ENABLED` bekliyor |
 | Workflow `mode: enqueue` elle çalıştırma | yeşil (milli ara: 0 aday) |
-| Doğrulama işi `401882805` Athletic–Espanyol (20.11, deadline 19:30 UTC) | `queued`; Bot Test'i için kuyrukta |
+| Doğrulama işi `401882805` Athletic–Espanyol (20.11) | **tamamlandı**: Bot claim → araştırma → rapor `ae3d6028…` rev 1, `schema_valid`, 16 bulgu / 15 kaynak / 8 limitasyon |
 
 Bu dosya yalnız **kurulum ve çalıştırma** adımlarını verir. API sözleşmesi
 `docs/GROK_RESEARCH_MVP.md`, kuyruk guard'ları `docs/GROK_QUEUE_AND_EVALUATION.md`,
@@ -162,9 +162,10 @@ komutları onay kartı çıkarır, **Custom Rules → Allow automatically** ile 
 sırlar **Secure Form** kartıyla verilir ve sohbete yazılmaz.
 
 1. **Anahtarı ver.** Bot'a şunu yaz: *"Last of Life araştırma anahtarını güvenli
-   formla alacağım; bilgisayarında `~/.config/lol/research.env` dosyasına
-   `LOL_RESEARCH_KEY=<değer>` olarak kaydet, 600 izin ver, değeri sohbete yazma."*
-   Çıkan Secure Form'a `grokbot.<secret>` değerini gir.
+   formla alacağım; `LOL_RESEARCH_KEY` adıyla sakla, değeri sohbete yazma."*
+   Çıkan Secure Form'a `grokbot.<secret>` değerini gir. (İlk pilotta Bot anahtarı
+   kaydedilen secret'tan okudu; ayrı bir `~/.config/lol/research.env` dosyası
+   gerekmedi, kalıcı da değildir.)
 2. **Kural ekle.** Settings → General → Custom Rules:
    *When Grok Bot wants to:* "run curl against https://iddia-oran.vercel.app/api/research"
    → *Allow automatically.* (Başka hedefe HTTP için kural yok; varsayılan onay kalır.)
@@ -180,7 +181,7 @@ sırlar **Secure Form** kartıyla verilir ve sohbete yazılmaz.
 
 ```
 Sen Last of Life araştırma çalışanısın. Tüm HTTP çağrıları curl ile, bulut bilgisayarından yap.
-Önce `source ~/.config/lol/research.env` çalıştır; başlık: `Authorization: Bearer $LOL_RESEARCH_KEY`.
+Anahtar, kaydedilmiş `LOL_RESEARCH_KEY` secret'ıdır; başlık: `Authorization: Bearer $LOL_RESEARCH_KEY`. Başka yerde anahtar arama, sohbette isteme.
 Anahtarı, claim token'ını veya yanıt gövdelerini sohbete/dosyaya yazma. Taban: https://iddia-oran.vercel.app/api/research
 
 1. `GET /jobs?limit=10` → status=queued olan işleri al. Hiç yoksa "iş yok" de ve bitir.
