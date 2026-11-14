@@ -5,9 +5,9 @@ name: Telegram kupon
 # (telegram_posts tablosu). TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID secret'ı yoksa sessizce atlar.
 on:
   schedule:
-    # Türkiye saati 09:20–00:20 arasında 3 saatte bir, ayrıca 03:20'de sonuç kontrolü.
-    # Sabah kuponuna 09:20/12:20/15:20 fırsatı, akşam sonuçlarına periyodik kontrol.
-    - cron: "20 0,6,9,12,15,18,21 * * *"
+    # Saatte bir: GitHub zamanlanmış çalıştırmaları sık sık atlıyor/geciktiriyor; sabah penceresinde
+    # (09–15 TSİ) altı deneme kuponun her gün gitmesini, gün içi denemeler sonucun çabuk gelmesini sağlar.
+    - cron: "38 * * * *"
   workflow_dispatch:
     inputs:
       force:
