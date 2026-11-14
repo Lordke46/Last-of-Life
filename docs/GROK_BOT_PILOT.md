@@ -15,6 +15,45 @@ Grok Bot rutini (webhook tetikli, bulut bilgisayarında curl ile)
 Rapor: GET /api/research/reports/{id}; girişli yönetici için Grok Intelligence paneli
 ```
 
+## Üretim durumu (14.11.2026)
+
+Bölüm 1–3 üretimde **tamamlandı**; sırada yalnız bölüm 4 (Grok Bot) ve 6 (Test) var.
+
+| Parça | Durum |
+|---|---|
+| `ai_research` şeması, guard tetikleyicileri, migration'lar | kurulu (`research_guard_job_insert`, `…_identity_update`) |
+| Vercel Research API (`lol_research_bot_login` runtime rolüyle) | canlı; anahtarsız `GET /api/research/jobs` → `401` |
+| `lol_research_scheduler` (runtime + identity_admin + `INSERT jobs`) | kurulu; Actions `RESEARCH_PILOT_QUEUE_DATABASE_URL` |
+| `lol_source_reader` (`public` salt okunur + RLS SELECT policy'leri) | kurulu; Actions `RESEARCH_PILOT_SOURCE_DATABASE_URL` |
+| Servis anahtarı `grokbot` (son kullanma 2027-06-01) | kurulu; eski `grok-prod` anahtarı Codex pilotundan kaldı, dokunulmadı |
+| GitHub environment `research-pilot` (2 secret + 2 variable) | kurulu; `GROK_BOT_WEBHOOK_URL/KEY` ve repo `RESEARCH_PILOT_ENABLED` bekliyor |
+| Workflow `mode: enqueue` elle çalıştırma | yeşil (milli ara: 0 aday) |
+| Doğrulama işi `401882805` Athletic–Espanyol (20.11) | **tamamlandı**: Bot claim → araştırma → rapor `ae3d6028…` rev 1, `schema_valid`, 16 bulgu / 15 kaynak / 8 limitasyon |
+
+## Sana kalan adımlar (yalnız Grok Bot tarafı)
+
+Anahtar Bot'ta kayıtlı ve bir iş elle uçtan uca başarıyla işlendi. Otomatiğe
+almak için sırayla:
+
+- [ ] **Skill'i kaydet.** Bölüm 4'teki `lol-research-run` metnini Skill olarak ekle
+      (sohbette tek seferlik çalıştırdıysan rutin için ayrıca kayıt gerekir).
+- [ ] **Custom Rule.** Settings → General → Custom Rules: *run curl against
+      https://iddia-oran.vercel.app/api/research* → **Allow automatically**. Yoksa
+      gözetimsiz run'lar onay kartında takılır.
+- [ ] **Rutin oluştur.** Skill'i çalıştıran rutin; tetikleyici **webhook**
+      (yedek: zaman tetikleyici 07:30 TSİ). Kartta `POST to <URL>` ve `key` görünür.
+- [ ] **Webhook bilgisini ilet.** `~/Desktop/lol-webhook.txt` dosyasına 1. satır URL,
+      2. satır key yaz; sohbete yapıştırma. Ben `GROK_BOT_WEBHOOK_URL/KEY` secret'larını
+      `research-pilot` ortamına koyar, dosyayı silerim.
+- [ ] **Test.** GitHub → Actions → `research-pilot` → *Run workflow → enqueue*
+      (bülten fiyatlı gün olmalı; milli arada 0 aday çıkar), ardından rutinde **Test**.
+      Bölüm 6 kontrolleri geçince ben repo değişkeni `RESEARCH_PILOT_ENABLED=1` eklerim;
+      cron 06:30 TSİ'de çalışmaya başlar.
+
+Sonrası (ayrı onay, bölüm 7): raporların günlük kupon brief'ine/Grok denetimine
+bağlanması ve `source_news` içindeki yabancı "Athletic Club" haber sızıntısının
+takım eşlemesinde düzeltilmesi.
+
 Bu dosya yalnız **kurulum ve çalıştırma** adımlarını verir. API sözleşmesi
 `docs/GROK_RESEARCH_MVP.md`, kuyruk guard'ları `docs/GROK_QUEUE_AND_EVALUATION.md`,
 Skill çıktısı `app/grok_skill_adapter.py` içindedir; bunlar değişmedi.
@@ -48,6 +87,8 @@ Hepsi tek projede, ayrı `ai_research` şeması ve ayrı rollerle. Sıra önemli
    sırayla çalıştır. (Grok Intelligence paneli için ayrıca
    `20261111000001_research_ui_readonly.sql`; `…0002/0003` pilot için gerekmez.)
 2. İki login rolü oluştur. Parolaları kendin üret; bu dosyaya veya sohbete yazma.
+   (Üretimde Vercel rolü zaten `lol_research_bot_login` adıyla vardı; yalnız yeni
+   bir ortam kuruyorsan `lol_research_api`'yi oluştur.)
 
    ```sql
    -- Vercel'deki API: iş okur/claim eder, rapor yazar. INSERT jobs yok.
@@ -68,6 +109,22 @@ Hepsi tek projede, ayrı `ai_research` şeması ve ayrı rollerle. Sıra önemli
    CREATE ROLE lol_source_reader LOGIN PASSWORD '<P3>' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
    GRANT USAGE ON SCHEMA public TO lol_source_reader;
    GRANT SELECT ON ALL TABLES IN SCHEMA public TO lol_source_reader;
+   ```
+
+   `public` tablolarında RLS açık ve policy yok (uygulama tablo sahibi olduğu için
+   etkilenmez); yeni rol policy'siz **0 satır** görür. Yalnız günlük seçimin
+   okuduğu veri tablolarına SELECT policy ver, kullanıcı/oturum tablolarından
+   yetkiyi geri al:
+
+   ```sql
+   DO $$ DECLARE t text; BEGIN
+    FOREACH t IN ARRAY ARRAY['matches','iddaa_events','iddaa_odds','iddaa_odds_history','odds_log','meta',
+                             'news','prediction_snapshots','player_match_stats','fetch_log','player_fetch_log'] LOOP
+     EXECUTE format('CREATE POLICY lol_source_reader_select ON public.%I FOR SELECT TO lol_source_reader USING (true)', t);
+    END LOOP;
+   END $$;
+   REVOKE ALL ON public.users, public.sessions, public.password_resets, public.saved_coupons,
+     public.saved_coupon_picks, public.telegram_posts, public.rate_limits FROM lol_source_reader;
    ```
 
 3. Grok Bot servis anahtarı. Anahtar `key_id.secret` biçimindedir; DB'ye yalnız
@@ -117,6 +174,10 @@ Settings → Environments → `research-pilot`:
 Repo değişkeni `RESEARCH_PILOT_ENABLED=1` yalnız her şey Test'ten geçince eklenir.
 O zamana kadar workflow sadece **Run workflow → mode: check/enqueue** ile çalışır.
 
+Not: Köprü yalnız **modelli liglerde iddaa fiyatı girilmiş** günün maçlarını seçer
+(`odds_source == 'iddaa'`, oran 1.15–2.30). Milli arada veya bülten henüz
+açılmamışsa çıktı `{"selected": 0, …}` olur; bu hata değildir.
+
 ## 4. Grok Bot kurulumu
 
 Resmî davranış (docs.x.ai/grok-bot): Bot'un kalıcı bulut bilgisayarında komut satırı
@@ -125,9 +186,10 @@ komutları onay kartı çıkarır, **Custom Rules → Allow automatically** ile 
 sırlar **Secure Form** kartıyla verilir ve sohbete yazılmaz.
 
 1. **Anahtarı ver.** Bot'a şunu yaz: *"Last of Life araştırma anahtarını güvenli
-   formla alacağım; bilgisayarında `~/.config/lol/research.env` dosyasına
-   `LOL_RESEARCH_KEY=<değer>` olarak kaydet, 600 izin ver, değeri sohbete yazma."*
-   Çıkan Secure Form'a `grokbot.<secret>` değerini gir.
+   formla alacağım; `LOL_RESEARCH_KEY` adıyla sakla, değeri sohbete yazma."*
+   Çıkan Secure Form'a `grokbot.<secret>` değerini gir. (İlk pilotta Bot anahtarı
+   kaydedilen secret'tan okudu; ayrı bir `~/.config/lol/research.env` dosyası
+   gerekmedi, kalıcı da değildir.)
 2. **Kural ekle.** Settings → General → Custom Rules:
    *When Grok Bot wants to:* "run curl against https://iddia-oran.vercel.app/api/research"
    → *Allow automatically.* (Başka hedefe HTTP için kural yok; varsayılan onay kalır.)
@@ -143,7 +205,7 @@ sırlar **Secure Form** kartıyla verilir ve sohbete yazılmaz.
 
 ```
 Sen Last of Life araştırma çalışanısın. Tüm HTTP çağrıları curl ile, bulut bilgisayarından yap.
-Önce `source ~/.config/lol/research.env` çalıştır; başlık: `Authorization: Bearer $LOL_RESEARCH_KEY`.
+Anahtar, kaydedilmiş `LOL_RESEARCH_KEY` secret'ıdır; başlık: `Authorization: Bearer $LOL_RESEARCH_KEY`. Başka yerde anahtar arama, sohbette isteme.
 Anahtarı, claim token'ını veya yanıt gövdelerini sohbete/dosyaya yazma. Taban: https://iddia-oran.vercel.app/api/research
 
 1. `GET /jobs?limit=10` → status=queued olan işleri al. Hiç yoksa "iş yok" de ve bitir.
