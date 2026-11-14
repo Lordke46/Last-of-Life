@@ -230,6 +230,21 @@ def recent_profits(conn, today, days: int = STAKE_RECENT_DAYS) -> dict:
     return out
 
 
+def _optional(conn, name, fn, message):
+    """Yardımcı adımı savepoint içinde çalıştırır: Postgres'te yakalanan hata işlemi iptal edip
+    sonraki kupon sorgularını (load_saved) düşürmesin."""
+    conn.execute(f"SAVEPOINT {name}")
+    try:
+        result = fn()
+    except Exception:  # noqa: BLE001 - bilgi/izleme adımı kupon yanıtını bozmaz
+        conn.execute(f"ROLLBACK TO SAVEPOINT {name}")
+        conn.execute(f"RELEASE SAVEPOINT {name}")
+        log.warning(message, exc_info=True)
+        return None
+    conn.execute(f"RELEASE SAVEPOINT {name}")
+    return result
+
+
 def daily_coupons(target, build=build_coupons) -> dict:
     """Web ve Telegram aynı (gün, tür) kaydını yayımlar; alternatifler canlı kalır."""
     from ..db import session
@@ -241,10 +256,7 @@ def daily_coupons(target, build=build_coupons) -> dict:
     with session() as conn:
         if target == _now().astimezone(TZ).date():
             freeze(conn, built)
-            try:
-                track_alternatives(conn, built)
-            except Exception:  # noqa: BLE001 - izleme kaydı kupon yanıtını bozmaz
-                log.warning("alternatif seçimler izlenemedi", exc_info=True)
+            _optional(conn, "track_alternatives", lambda: track_alternatives(conn, built), "alternatif seçimler izlenemedi")
         for kind in KINDS:
             published = load_saved(conn, target.isoformat(), kind)
             if not published:
@@ -254,15 +266,8 @@ def daily_coupons(target, build=build_coupons) -> dict:
                     if signature(c) != signature(published)]
             built[kind] = published
             built[f"{kind}_alternatives"] = [published, *live]
-        try:
-            recent = recent_profits(conn, target)
-        except Exception:  # noqa: BLE001 - stake önerisi kuponu engellememeli
-            log.warning("stake geçmişi okunamadı", exc_info=True)
-            recent = {}
-        try:
-            odds_moves(conn, built)
-        except Exception:  # noqa: BLE001 - oran hareketi yalnız bilgi notu
-            log.warning("oran hareketi okunamadı", exc_info=True)
+        recent = _optional(conn, "recent_profits", lambda: recent_profits(conn, target), "stake geçmişi okunamadı") or {}
+        _optional(conn, "odds_moves", lambda: odds_moves(conn, built), "oran hareketi okunamadı")
     for kind in KINDS:
         for key in (kind, f"current_{kind}"):
             if built.get(key) and built[key].get("picks"):

@@ -367,6 +367,17 @@ class IddaaResultTest(DbCase):
         self.assertEqual(banko["status"], "lost")
 
 
+class OptionalStepTest(DbCase):
+    def test_failed_optional_step_rolls_back_its_writes_and_keeps_transaction_usable(self):
+        def broken():
+            conn.execute("INSERT INTO meta(key, value) VALUES('partial', 'x')")
+            raise RuntimeError("fk")
+        with db.session() as conn:
+            self.assertIsNone(ch._optional(conn, "probe", broken, "test"))
+            self.assertEqual(ch._optional(conn, "probe", lambda: 7, "test"), 7)
+            self.assertIsNone(db.get_meta(conn, "partial"))
+
+
 class TrackingCalibrationTest(DbCase):
     def test_alternatives_are_tracked_settled_and_calibrated_but_not_listed(self):
         future = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%dT%H:%MZ")

@@ -23,7 +23,7 @@ def _latest_trusted_quote(conn):
     all_quotes = [quote for event in state.get("events", {}).values()
                   for quote in (event.get("quotes") or {}).values()]
     observed = [_timestamp(quote.get("quote_observed_at")) for quote in all_quotes
-                if quote.get("cache_status") == "network_no_cache_evidence"]
+                if quote_provenance.trusted(quote)]
     return max((item for item in observed if item), default=None)
 
 
