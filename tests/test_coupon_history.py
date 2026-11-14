@@ -365,3 +365,43 @@ class IddaaResultTest(DbCase):
         banko = self.history()["days"][0]["banko"]
         self.assertEqual([p["status"] for p in banko["picks"]], ["won", "lost", "void"])
         self.assertEqual(banko["status"], "lost")
+
+
+class TrackingCalibrationTest(DbCase):
+    def test_alternatives_are_tracked_settled_and_calibrated_but_not_listed(self):
+        future = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%dT%H:%MZ")
+        day = datetime.now(ch.TZ).date().isoformat()
+        built = day_coupons(day, banko=[pick(1, kickoff=future)])
+        built["banko_alternatives"] = [coupon([pick(1, "X", kickoff=future), pick(2, p=0.45, kickoff=future),
+                                               {**pick(3, kickoff=future), "small_league": True}])]
+        built["surprise_alternatives"] = [coupon([pick(4, kickoff=OLD)])]  # başlamış: izlenmez
+        with db.session() as conn:
+            self.assertEqual(ch.track_alternatives(conn, built), 3)
+            self.assertEqual(ch.track_alternatives(conn, built), 0)
+            rows = conn.execute("SELECT match_id, market FROM saved_coupon_picks WHERE kind='tracked' "
+                                "ORDER BY match_id").fetchall()
+            meta = db.get_meta(conn, f"coupon_metadata:{day}:tracked")
+        self.assertEqual([(r["match_id"], r["market"]) for r in rows], [("1", "1"), ("2", "1"), ("3", "1")])
+        self.assertIn('"iddaa_event_id": 3', meta)
+        self.freeze(built)
+        with db.session() as conn:
+            conn.execute("UPDATE saved_coupon_picks SET status='won' WHERE match_id IN ('1', '3')")
+            conn.execute("UPDATE saved_coupon_picks SET status='lost' WHERE match_id='2'")
+            h = ch.history(conn)
+        self.assertEqual(h["summary"]["banko"]["coupons"], 1)  # izlenenler geçmişe/kâra girmez
+        bins = {b["range"]: b for b in h["calibration"]}
+        self.assertEqual((bins["%40–50"]["n"], bins["%40–50"]["actual"]), (1, 0.0))
+        self.assertEqual((bins["%80+"]["n"], bins["%80+"]["predicted"], bins["%80+"]["actual"]), (2, 0.8, 1.0))
+
+    def test_odds_moves_annotate_picks(self):
+        with db.session() as conn:
+            for odd, at in ((2.0, "2026-10-01T10:00Z"), (1.9, "2026-10-01T12:00Z"), (1.8, "2026-10-01T14:00Z")):
+                conn.execute("INSERT INTO iddaa_odds_history(event_id, market, odd, captured_at, kickoff) "
+                             "VALUES('e1', '1', ?, ?, '2026-10-02T18:00Z')", (odd, at))
+            built = {"banko": {"picks": [{**pick(1), "iddaa_event_id": "e1"}, pick(2)]},
+                     "surprise_alternatives": [{"picks": [{**pick(9), "iddaa_event_id": "e1", "market": "X"}]}]}
+            out = ch.odds_moves(conn, built)
+        first, second = out["banko"]["picks"]
+        self.assertEqual((first["odds_open"], first["odds_current"], first["odds_move"]), (2.0, 1.8, -0.1))
+        self.assertNotIn("odds_move", second)
+        self.assertNotIn("odds_move", out["surprise_alternatives"][0]["picks"][0])

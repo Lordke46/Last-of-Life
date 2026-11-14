@@ -110,3 +110,11 @@ button, a, input, select { touch-action: manipulation; }
 .coupon-simple .simple-leg-play .iddaa-odd { margin-left: auto; font-size: 16px; }
 .coupon-simple .simple-leg-more summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 4px; }
 .coupon-simple .simple-total { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.coupon-played { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.coupon-played input { width: 110px; padding: 8px; border-radius: 8px; border: 1px solid var(--line, #ccc); background: var(--panel2, transparent); color: inherit; }
+.ledger-bank { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.ledger-bank input { width: 120px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--line, #ccc); background: var(--panel2, transparent); color: inherit; }
+.ch-bars { height: 6px; background: var(--panel2, #eee); border-radius: 3px; margin-top: 3px; overflow: hidden; }
+.ch-bar { display: block; height: 100%; border-radius: 3px; }
+.ch-bar-pred { background: var(--muted, #888); }
+.ch-bar-real { background: var(--accent, #2a7); }

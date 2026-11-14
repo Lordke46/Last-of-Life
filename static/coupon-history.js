@@ -31,6 +31,21 @@ function chSummaryRow(label, s) {
     <td class="${chSign(s.clv)}" title="${s.clv_picks ? `${s.clv_picks} seçimin ${s.clv_positive}'i kapanıştan iyi oranla alındı` : "Henüz kapanış oranı kaydedilmiş seçim yok"}">${chClv(s.clv)}${s.clv_picks ? ` <span class="muted">(${s.clv_picks})</span>` : ""}</td></tr>`;
 }
 
+// Tahmin isabeti: olasılık dilimi başına ortalama tahmin ve gerçek tutma oranı (kupon + izlenen alternatif seçimler).
+function chCalibration(rows) {
+  const filled = (Array.isArray(rows) ? rows : []).filter((r) => r && r.n > 0);
+  if (!filled.length) return `<div class="card"><h3>Tahmin isabeti</h3><p class="muted">Henüz sonuçlanan seçim yok; maçlar bittikçe dolacak.</p></div>`;
+  const bar = (v, cls) => `<span class="ch-bar ${cls}" style="width:${Math.round(Math.min(1, Math.max(0, v)) * 100)}%"></span>`;
+  const body = filled.map((r) => {
+    const gap = r.actual - r.predicted;
+    return `<tr><td class="l"><b>${esc(r.range)}</b></td><td>${r.n}</td><td>${chPct(r.predicted)}<div class="ch-bars">${bar(r.predicted, "ch-bar-pred")}</div></td>
+      <td class="${r.n >= 20 ? chSign(gap) : ""}">${chPct(r.actual)}<div class="ch-bars">${bar(r.actual, "ch-bar-real")}</div></td></tr>`;
+  }).join("");
+  return `<div class="card"><h3>Tahmin isabeti</h3>
+    <table><tr><th class="l">Tahmin dilimi</th><th>Seçim</th><th>Ortalama tahmin</th><th>Gerçekleşen</th></tr>${body}</table>
+    <p class="muted">“%70 dediğimiz maçlar gerçekten %70 geliyor mu?” Kupon ve alternatif kuponlardaki tüm seçimler sayılır. Bir dilimde 20'den az seçim varken fark şansa bağlıdır.</p></div>`;
+}
+
 async function renderCouponHistory() {
   const el = $("#couponHistory");
   el.innerHTML = `<p class="muted">Yükleniyor…</p>`;
@@ -53,6 +68,7 @@ async function renderCouponHistory() {
       <table><tr><th class="l">Kupon</th><th>Tutan/Sonuçlanan</th><th>Tutma</th><th>Yatırılan</th><th>Dönen</th><th>Kâr/Zarar</th><th>Kâr oranı</th><th title="Closing line value: kaydedilen oran / kapanış oranı − 1">CLV</th></tr>
       ${chSummaryRow("Banko", banko)}${chSummaryRow("Sürpriz", surprise)}${chSummaryRow("Toplam", total)}${grokRows}</table>
       <p class="muted">Her gün Banko ve Sürpriz kuponun her birine ${h.stake} TL, kaydedilen oranla; yalnız sonuçlanan kuponlar sayılır. Ertelenen/iptal maç oranı 1.00 kabul edilir. <b>CLV</b>: kaydedilen oranın maç öncesi son iddaa oranına göre farkı; sürekli pozitifse seçimler piyasadan önce doğru yönü buluyor demektir ve kâr küçük örneklemde şansa bağlı kalsa da bu gösterge güvenilirdir.${grokRows ? " Grok satırları veto sonrası alternatifleri ayrı ölçer; Toplam'a dahil değildir." : ""}</p></div>
+    ${chCalibration(h.calibration)}
     <div class="card"><h3>Günlük liste</h3>${h.days.map((d) => `<div class="ch-day"><div class="row-between"><b>${fmtDay(d.date + "T12:00:00Z")}</b><span class="${chSign(d.profit)}">${chTL(d.profit)}</span></div>${chCoupon("banko", d.banko)}${chCoupon("surprise", d.surprise)}${grokDay(d)}</div>`).join("")}
       ${h.total_days > h.days.length ? `<p class="muted">Son ${h.days.length} gün gösteriliyor (toplam ${h.total_days}).</p>` : ""}</div>`;
 }

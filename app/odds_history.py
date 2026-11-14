@@ -111,6 +111,29 @@ def movements_for_matches(conn, match_ids) -> dict[str, dict[str, dict]]:
     return out
 
 
+def event_moves(conn, pairs) -> dict[tuple[str, str], dict]:
+    """{(etkinlik, pazar): {open, current, change_pct, direction}}; en az iki kayıt (değişim) olanlar.
+    Sağlayıcı kimliği/çizgisi değişmişse seri o andan başlar (history_for_match ile aynı kural)."""
+    pairs = {(str(e), m) for e, m in pairs if e and m}
+    ids = sorted({e for e, _ in pairs})
+    if not ids:
+        return {}
+    marks = ",".join("?" for _ in ids)
+    rows = conn.execute(f"SELECT event_id, market, odd, captured_at FROM iddaa_odds_history "
+                        f"WHERE event_id IN ({marks}) ORDER BY captured_at", ids).fetchall()
+    state = quote_provenance.load(conn, ids)
+    series: dict[tuple[str, str], list[float]] = {}
+    for r in rows:
+        key = (str(r["event_id"]), r["market"])
+        if key not in pairs or not r["odd"] or r["odd"] <= 1:
+            continue
+        cutoff = quote_provenance.for_event(state, key[0]).get("quotes", {}).get(key[1], {}).get("identity_first_observed_at")
+        if cutoff and r["captured_at"] < cutoff:
+            continue
+        series.setdefault(key, []).append(float(r["odd"]))
+    return {k: _change(v[0], v[-1]) for k, v in series.items() if len(v) >= 2}
+
+
 def history_for_match(conn, match_id: str) -> dict | None:
     """Maçın eşleşen iddaa etkinliğinin pazar başına zaman damgalı oran serisi."""
     event = conn.execute("SELECT id FROM iddaa_events WHERE match_id = ?", (str(match_id),)).fetchone()

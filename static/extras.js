@@ -3,7 +3,7 @@
 window.Extras = (() => {
   "use strict";
   const S = window.SysCalc;
-  const FAV_KEY = "iddiaoran.favs.v1", LEDGER_KEY = "iddiaoran.ledger.v1";
+  const FAV_KEY = "iddiaoran.favs.v1", LEDGER_KEY = "iddiaoran.ledger.v1", BANK_KEY = "iddiaoran.bankroll.v1";
   const money = (n) => n.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₺";
   const signed = (n) => (n > 0 ? "+" : "") + money(n);
   const read = (key) => { try { return JSON.parse(localStorage.getItem(key)); } catch { return null; } };
@@ -56,6 +56,22 @@ window.Extras = (() => {
     if (!e) { notice = "Kayıt için tutar ve geçerli seçim gerekli."; return false; }
     ledger = [e, ...ledger].slice(0, 300); saveLedger(); notice = "Kupon deftere kaydedildi."; return true;
   }
+  // ---------- kasa ----------
+  const bankroll = () => { const v = Number(read(BANK_KEY)); return Number.isFinite(v) && v > 0 ? v : null; };
+  /** Kasanın önerilen yüzdesi (kupon stake_plan.percent) → TL; kasa girilmemişse null. */
+  function suggestStake(percent) {
+    const bank = bankroll(), pct = Number(percent);
+    return bank && Number.isFinite(pct) && pct > 0 ? Math.max(1, Math.round(bank * pct / 100)) : null;
+  }
+  /** Önerilen kuponu gerçekten oynadım: deftere kombine olarak kaydeder (sonuçlar canlı veriden işlenir). */
+  function addPlayed(picks, stake) {
+    const rows = (picks || []).filter((p) => p && Number(p.odds) > 1)
+      .map((p) => ({ id: p.id, market: p.market, home: p.home, away: p.away, odds: Number(p.odds), kickoff: p.kickoff }));
+    const ok = addEntry("combo", rows, Number(stake));
+    if (ok) renderLedger();
+    return ok;
+  }
+
   /** Canlı/biten maç verisiyle seçimleri otomatik sonuçlandırır. */
   function settle() {
     if (typeof state === "undefined" || !state.live || !state.live.size || !ledger.some((e) => e.picks.some((p) => !p.res))) return false;
@@ -91,12 +107,15 @@ window.Extras = (() => {
     const el = document.querySelector("#ledger");
     if (!el) return;
     settle();
-    const s = S.ledgerStats(ledger);
+    const s = S.ledgerStats(ledger), bank = bankroll();
     el.innerHTML = `<div class="card"><div class="row-between"><h3>Kupon defteri</h3><span class="badge b-info">${s.total} kayıt · ${s.pending} bekliyor</span></div>
       <div class="slip-stats"><div><small>Toplam yatırım</small><b>${money(s.stake)}</b></div><div><small>Kazanç</small><b>${money(s.payout)}</b></div>
       <div><small>Net</small><b style="color:var(--${s.net >= 0 ? "good" : "bad"})">${signed(s.net)}</b></div>
       <div><small>Kâr oranı</small><b>${s.roi === null ? "–" : (s.roi > 0 ? "+" : "") + (s.roi * 100).toFixed(1) + "%"}</b></div>
-      <div><small>Tuttu / Yattı</small><b>${s.won} / ${s.lost}</b></div></div>${lineChart(s.series)}
+      <div><small>Tuttu / Yattı</small><b>${s.won} / ${s.lost}</b></div>
+      ${bank ? `<div><small>Güncel kasa</small><b>${money(bank + s.net - s.pendingStake)}</b></div>` : ""}</div>${lineChart(s.series)}
+      <label class="ledger-bank">Başlangıç kasam <input type="number" id="ledBank" min="1" step="1" inputmode="decimal" placeholder="örn. 1000" value="${bank ?? ""}"> ₺</label>
+      <p class="muted small">Kasanı girersen Kuponlar sekmesindeki önerilen yüzde TL olarak dolar; “Oynadım” ile kaydettiğin kuponlar gerçek kâr/zararını gösterir.</p>
       <div class="slip-actions"><button type="button" class="btn" id="ledExport">Dışa aktar (JSON)</button><button type="button" class="btn" id="ledImport">İçe aktar</button>
       <input type="file" id="ledFile" accept="application/json,.json" class="hidden"></div>
       <p class="muted slip-note">Sonuçlar canlı takip verisinden otomatik işlenir; bulunamayanları elle işaretleyebilirsiniz. Yalnız sonuçlanan kuponlar toplama girer. ${esc(notice)}</p></div>
@@ -172,10 +191,11 @@ window.Extras = (() => {
     }
   }, true);
   document.addEventListener("change", (e) => {
-    if (e.target.id === "sysK") { sysK = Number(e.target.value); window.Slip?.render(); }
+    if (e.target.id === "ledBank") { const v = Number(e.target.value); write(BANK_KEY, Number.isFinite(v) && v > 0 ? v : null); renderLedger(); }
+    else if (e.target.id === "sysK") { sysK = Number(e.target.value); window.Slip?.render(); }
     else if (e.target.id === "ledFile" && e.target.files[0]) importLedger(e.target.files[0]);
   });
 
   function resetMatchView() { onlyFavs=false; }
-  return { resetMatchView, star, filterButton, afterMatches, renderFavToday, renderLedger, slipExtras, onLive, isFav };
+  return { resetMatchView, star, filterButton, afterMatches, renderFavToday, renderLedger, slipExtras, onLive, isFav, bankroll, suggestStake, addPlayed };
 })();

@@ -124,6 +124,17 @@
     return coupon && Array.isArray(coupon.picks) && coupon.picks.length ? coupon : null;
   }
 
+  /** Açılıştan bu yana ±%5 oynayan oran: düşüş piyasanın aynı yönde olduğunu, yükseliş ters yönde olduğunu gösterir. */
+  function oddsMove(pick) {
+    const move = numeric(pick?.odds_move);
+    if (move === null || Math.abs(move) < 0.05) return "";
+    const pctText = `%${Math.round(Math.abs(move) * 100)}`;
+    const from = numeric(pick.odds_open) !== null ? ` (açılış ${displayNumber(pick.odds_open)})` : "";
+    return move < 0
+      ? ` <span class="badge b-good" title="Oran açılıştan beri düştü${esc(from)}: piyasa da bu seçime yöneliyor">📉 Oran düşüyor ${pctText}</span>`
+      : ` <span class="badge b-warn" title="Oran açılıştan beri yükseldi${esc(from)}: piyasa ters yönde">📈 Oran yükseliyor ${pctText}</span>`;
+  }
+
   /** Sade kupon kartı: her satırda maç ve ne oynanacağı; ayrıntılar katlanmış. */
   function simpleCard(coupon, kind, share = null) {
     const picks = (Array.isArray(coupon?.picks) ? coupon.picks : []).filter((pick) => pick && typeof pick === "object")
@@ -133,9 +144,10 @@
     const legs = picks.map((pick) => {
       const more = [pick.league_name || pick.league, numeric(pick.p) !== null ? `tahmini ${probability(pick.p)}` : ""].filter(Boolean).map(esc).join(" · ");
       const extra = grokBadge(pick) + researchBadge(pick);
+      const move = oddsMove(pick);
       return `<li class="simple-leg" data-coupon-leg="${esc(pick.id ?? pick.match_id ?? "")}" data-market="${esc(pick.market || "")}">
         <div class="simple-leg-match"><span class="simple-leg-time">${esc(pickTime(pick.kickoff))}</span> <b>${esc(pick.home || "?")} – ${esc(pick.away || "?")}</b> <span class="leg-result"></span></div>
-        <div class="simple-leg-play">Oyna: <b>${esc(headline(pick.market))}</b>${explain(pick.market) ? ` <span class="muted">${esc(explain(pick.market))}</span>` : ""} <b class="iddaa-odd">${esc(displayNumber(pick.odds))}</b></div>
+        <div class="simple-leg-play">Oyna: <b>${esc(headline(pick.market))}</b>${explain(pick.market) ? ` <span class="muted">${esc(explain(pick.market))}</span>` : ""} <b class="iddaa-odd">${esc(displayNumber(pick.odds))}</b>${move}</div>
         ${more || extra ? `<details class="simple-leg-more"><summary>Detay</summary><p class="muted">${more}</p>${extra}</details>` : ""}
       </li>`;
     }).join("");
@@ -143,7 +155,8 @@
     const grok = coupon?.publication === "grok" || String(coupon?.type || "").endsWith("_grok")
       ? `<p class="coupon-grok-warning"><span class="badge b-info">Grok değişimi</span> ${esc(coupon.grok_note || "Veto edilen maç çıkarıldı.")}</p>` : "";
     const shareActions = share && picks.length
-      ? `<div class="coupon-share-actions"><button type="button" class="btn" data-share-coupon data-share-type="${esc(share.kind)}" data-share-index="${share.index}">Paylaş</button><select aria-label="Görsel boyutu" data-share-size><option value="square">Kare 1080×1080</option><option value="story">Story 1080×1920</option></select></div>` : "";
+      ? `<div class="coupon-share-actions"><button type="button" class="btn" data-share-coupon data-share-type="${esc(share.kind)}" data-share-index="${share.index}">Paylaş</button><select aria-label="Görsel boyutu" data-share-size><option value="square">Kare 1080×1080</option><option value="story">Story 1080×1920</option></select></div>
+        <div class="coupon-played"><input type="number" min="1" step="1" inputmode="decimal" placeholder="Tutar ₺" aria-label="Yatırdığın tutar" data-played-stake data-stake-pct="${numeric(coupon?.stake_plan?.percent) ?? ""}"><button type="button" class="btn" data-played-coupon data-share-type="${esc(share.kind)}" data-share-index="${share.index}">Oynadım</button><span class="muted small" data-played-note></span></div>` : "";
     return `<div class="card coupon-card coupon-simple"><div class="row-between"><h3>${esc(KIND_TITLE[kind] || kind)} <span class="coupon-outcome"></span></h3><span class="badge b-info">${picks.length} maç</span></div>
       ${grok}<ol class="simple-legs">${legs}</ol>
       <div class="coupon-total simple-total"><span>Toplam oran <b>${esc(displayNumber(coupon?.total_odds))}</b></span><span>Tutma ihtimali <b>${probability(coupon?.total_probability)}</b></span>${stake !== null ? `<span title="${esc(coupon.stake_plan.note || "")}">Önerilen miktar <b>kasanın %${esc(String(stake).replace(".", ","))}'i</b></span>` : ""}</div>
@@ -260,7 +273,7 @@
     });
   }
 
-  const api = { applyResults, couponOutcome, alternatives, couponCard, couponGroup, emptyReason, grokAuditCard, grokBadge, researchBadge, mainCoupon, simpleCard };
+  const api = { applyResults, couponOutcome, alternatives, couponCard, couponGroup, emptyReason, grokAuditCard, grokBadge, researchBadge, mainCoupon, simpleCard, oddsMove };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.CouponView = api;
 })();

@@ -301,6 +301,18 @@ function drawCoupons(d, req) {
     const coupon = type.startsWith("main:") ? CouponView.mainCoupon(data, type.slice(5)) : CouponView.alternatives(data, type)[index];
     if (coupon?.picks?.length) window.CouponShare?.share({ title: button.closest(".coupon-card").querySelector("h3").textContent, date: data.date, picks: coupon.picks, totalOdds: coupon.total_odds }, button.parentElement.querySelector("[data-share-size]").value);
   }));
+  el.querySelectorAll("[data-played-stake]").forEach((input) => {
+    const suggested = window.Extras?.suggestStake?.(input.dataset.stakePct);
+    if (suggested) input.value = suggested;
+  });
+  el.querySelectorAll("[data-played-coupon]").forEach((button) => button.addEventListener("click", () => {
+    const type = button.dataset.shareType, index = Number(button.dataset.shareIndex) || 0;
+    const coupon = type.startsWith("main:") ? CouponView.mainCoupon(data, type.slice(5)) : CouponView.alternatives(data, type)[index];
+    const box = button.parentElement, note = box.querySelector("[data-played-note]");
+    const ok = coupon?.picks?.length && window.Extras?.addPlayed?.(coupon.picks, box.querySelector("[data-played-stake]").value);
+    note.textContent = ok ? "Deftere kaydedildi ✓" : "Önce yatırdığın tutarı gir.";
+    if (ok) button.disabled = true;
+  }));
   refreshCouponResults(req);
 }
 

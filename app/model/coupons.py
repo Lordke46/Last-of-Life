@@ -76,8 +76,10 @@ def clv_blocklist(conn, now: datetime | None = None) -> dict[str, set[str]]:
     since = ((now or datetime.now(timezone.utc)) - timedelta(days=CLV_LOOKBACK_DAYS)).astimezone(TZ).date().isoformat()
     stats = {"league": {}, "market": {}}
     try:
-        rows = conn.execute("SELECT DISTINCT match_id, league, market, odds, closing_odds FROM saved_coupon_picks "
-                            "WHERE day >= ? AND closing_odds > 1 AND odds > 1 AND status != 'void'", (since,)).fetchall()
+        # Kupon + izlenen (tracked) kayıtta aynı gün/maç/pazar bir kez sayılır.
+        rows = conn.execute("SELECT league, market, MAX(odds) AS odds, MAX(closing_odds) AS closing_odds "
+                            "FROM saved_coupon_picks WHERE day >= ? AND closing_odds > 1 AND odds > 1 "
+                            "AND status != 'void' GROUP BY day, match_id, league, market", (since,)).fetchall()
     except Exception:  # noqa: BLE001 — eski şema/erişim sorunu kupon üretimini durdurmaz
         return {"league": set(), "market": set()}
     for r in rows:

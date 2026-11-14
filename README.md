@@ -156,6 +156,17 @@ altındaysa (piyasayı sürekli geride bırakamıyorsa) motor o lig/pazarı atla
 yalnız-piyasa (küçük lig/milli maç, model verisi olmayan) bacak bulunur; başka seçenek yoksa kural gevşer. Sürpriz kupon
 hedef bandını 2 bacakla tutturabiliyorsa 3 bacağa gitmez (iddaa MBS 3 olan günlerde 3 bacak zorunludur).
 
+**İzlenen alternatifler ve tahmin isabeti:** alternatif kuponlardaki başlamamış seçimler de `kind='tracked'` ile
+`saved_coupon_picks`'e yazılır (geçmiş listesine ve kâra girmez); sonuç ve kapanış oranı alırlar, böylece CLV elemesi
+çok daha hızlı veri toplar. `/api/coupon-history` yanıtındaki `calibration` olasılık dilimi başına ortalama tahmini ve
+gerçek tutma oranını verir (Kupon Geçmişi → "Tahmin isabeti").
+
+**Oran hareketi:** kupon seçimlerine `iddaa_odds_history`'den `odds_open` / `odds_current` / `odds_move` eklenir;
+±%5'ten büyük hareket kartta 📉 (piyasa aynı yönde) / 📈 (ters yönde) rozetidir. Olasılığı değiştirmez, yalnız işarettir.
+
+**Kasa:** Kuponlar kartındaki "Oynadım" kuponu tutarıyla Kupon Defteri'ne kaydeder; defterde başlangıç kasası
+girilirse önerilen yüzde TL olarak dolar ve güncel kasa gösterilir (tarayıcıda, `iddiaoran.bankroll.v1`).
+
 Web ve Telegram günün ilk kaydedilen Banko/Sürpriz kuponunu ortak kayıttan okur. Her kaydın
 `coupon_id` / `published_at` bilgisi vardır; sonradan hesaplanan alternatifler arayüzde ayrı etiketlenir.
 Otomatik kuponlarda yalnız tam maç skoruyla sonuçlandırılabilen pazarlar kullanılır; ilk yarı ve handikap
@@ -196,7 +207,9 @@ miktar (çeyrek Kelly, kasanın %0.5–3'ü; son 7 gün zarardaysa yarıya iner)
 mesajına ✅/❌ yanıtı olarak bir kez yazılır; Pazartesi 10:00'dan sonra geçen haftanın özeti (kazanan/kaybeden,
 kâr, ROI, CLV) gönderilir. Grok Bot raporunda **doğrulanmış erteleme/iptal** varsa (ya da elle Grok veto'su
 kaydedildiyse) yayımlanan kupon yerine veto'suz ilk alternatif "Grok değişimi" olarak gönderilir; doğrulanmış
-sakatlık/ceza yalnızca "dikkat" işareti koyar.
+sakatlık/ceza yalnızca "dikkat" işareti koyar. Her bacağın başlamasına 30–100 dk kala kupon mesajına bir kez
+**maç öncesi kontrol** yanıtı gider: kadro durumu, doğrulanmış sakatlık/ceza, Grok kararı ve belirgin oran hareketi
+(veri `PUBLIC_BASE_URL`/api/coupons'tan okunur; varsayılan https://iddia-oran.vercel.app).
 
 Kurulum (bir kez):
 1. Telegram'da **@BotFather** → `/newbot` ile bot oluşturun, verdiği **token**'ı kopyalayın.
