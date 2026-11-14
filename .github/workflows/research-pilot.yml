@@ -1,0 +1,57 @@
+name: Grok Bot research pilot
+
+# Daily enqueue of today's research candidates, then a webhook ping that starts the
+# Grok Bot routine only when new jobs exist. Scheduled runs are inert until the
+# repository variable RESEARCH_PILOT_ENABLED is "1"; manual runs always execute.
+# Setup: docs/GROK_BOT_PILOT.md
+on:
+  schedule:
+    - cron: '30 3 * * *'   # 06:30 Türkiye
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "check: verify configuration shape only; enqueue: queue jobs and notify Grok Bot"
+        required: true
+        type: choice
+        default: check
+        options:
+          - check
+          - enqueue
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-queue-pilot
+  cancel-in-progress: false
+
+jobs:
+  research-pilot:
+    if: github.event_name == 'workflow_dispatch' || vars.RESEARCH_PILOT_ENABLED == '1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: research-pilot
+    env:
+      DATABASE_URL: ${{ secrets.RESEARCH_PILOT_SOURCE_DATABASE_URL }}
+      RESEARCH_DATABASE_URL: ${{ secrets.RESEARCH_PILOT_QUEUE_DATABASE_URL }}
+      RESEARCH_AUTO_OWNER: ${{ vars.RESEARCH_PILOT_OWNER }}
+      RESEARCH_PUBLIC_BASE_URL: ${{ vars.RESEARCH_PUBLIC_BASE_URL }}
+      GROK_BOT_WEBHOOK_URL: ${{ secrets.GROK_BOT_WEBHOOK_URL }}
+      GROK_BOT_WEBHOOK_KEY: ${{ secrets.GROK_BOT_WEBHOOK_KEY }}
+      RESEARCH_AUTO_IDENTITY: '1'
+      RESEARCH_AUTO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Verify configuration shape without connecting
+        run: python -m app.research_auto --check
+      - name: Enqueue today's research jobs and notify Grok Bot
+        if: github.event_name == 'schedule' || inputs.mode == 'enqueue'
+        env:
+          RESEARCH_AUTO_ENABLED: '1'
+        run: python -m app.research_auto
