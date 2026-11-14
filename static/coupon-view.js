@@ -113,6 +113,43 @@
     return `<div class="card coupon-card"><div class="row-between"><h3>${esc(title)} <span class="coupon-outcome"></span></h3><span>${source(coupon, picks)} <span class="badge ${esc(badgeClass)}">${picks.length} maç</span></span></div>${selectionNote}${publication}${grokWarning}${calibrationNote}${content}${totals}${research}${shareActions}</div>`;
   }
 
+  const KIND_TITLE = { banko: "💎 Banko", surprise: "🎲 Sürpriz" };
+
+  /** Günün gösterilecek kuponu: Grok değişimi varsa o, yoksa yayımlanan/güncel kupon. */
+  function mainCoupon(data, kind) {
+    if (!data || typeof data !== "object") return null;
+    const grok = data[`${kind}_grok`];
+    if (grok && Array.isArray(grok.picks) && grok.picks.length) return grok;
+    const coupon = data[kind];
+    return coupon && Array.isArray(coupon.picks) && coupon.picks.length ? coupon : null;
+  }
+
+  /** Sade kupon kartı: her satırda maç ve ne oynanacağı; ayrıntılar katlanmış. */
+  function simpleCard(coupon, kind, share = null) {
+    const picks = (Array.isArray(coupon?.picks) ? coupon.picks : []).filter((pick) => pick && typeof pick === "object")
+      .slice().sort((a, b) => String(a.kickoff || "").localeCompare(String(b.kickoff || "")));
+    const headline = (market) => (typeof window !== "undefined" && window.Simple?.headline?.(market)) || market || "-";
+    const explain = (market) => (typeof window !== "undefined" && window.Simple?.title?.(market)) || "";
+    const legs = picks.map((pick) => {
+      const more = [pick.league_name || pick.league, numeric(pick.p) !== null ? `tahmini ${probability(pick.p)}` : ""].filter(Boolean).map(esc).join(" · ");
+      const extra = grokBadge(pick) + researchBadge(pick);
+      return `<li class="simple-leg" data-coupon-leg="${esc(pick.id ?? pick.match_id ?? "")}" data-market="${esc(pick.market || "")}">
+        <div class="simple-leg-match"><span class="simple-leg-time">${esc(pickTime(pick.kickoff))}</span> <b>${esc(pick.home || "?")} – ${esc(pick.away || "?")}</b> <span class="leg-result"></span></div>
+        <div class="simple-leg-play">Oyna: <b>${esc(headline(pick.market))}</b>${explain(pick.market) ? ` <span class="muted">${esc(explain(pick.market))}</span>` : ""} <b class="iddaa-odd">${esc(displayNumber(pick.odds))}</b></div>
+        ${more || extra ? `<details class="simple-leg-more"><summary>Detay</summary><p class="muted">${more}</p>${extra}</details>` : ""}
+      </li>`;
+    }).join("");
+    const stake = numeric(coupon?.stake_plan?.percent);
+    const grok = coupon?.publication === "grok" || String(coupon?.type || "").endsWith("_grok")
+      ? `<p class="coupon-grok-warning"><span class="badge b-info">Grok değişimi</span> ${esc(coupon.grok_note || "Veto edilen maç çıkarıldı.")}</p>` : "";
+    const shareActions = share && picks.length
+      ? `<div class="coupon-share-actions"><button type="button" class="btn" data-share-coupon data-share-type="${esc(share.kind)}" data-share-index="${share.index}">Paylaş</button><select aria-label="Görsel boyutu" data-share-size><option value="square">Kare 1080×1080</option><option value="story">Story 1080×1920</option></select></div>` : "";
+    return `<div class="card coupon-card coupon-simple"><div class="row-between"><h3>${esc(KIND_TITLE[kind] || kind)} <span class="coupon-outcome"></span></h3><span class="badge b-info">${picks.length} maç</span></div>
+      ${grok}<ol class="simple-legs">${legs}</ol>
+      <div class="coupon-total simple-total"><span>Toplam oran <b>${esc(displayNumber(coupon?.total_odds))}</b></span><span>Tutma ihtimali <b>${probability(coupon?.total_probability)}</b></span>${stake !== null ? `<span title="${esc(coupon.stake_plan.note || "")}">Önerilen miktar <b>kasanın %${esc(String(stake).replace(".", ","))}'i</b></span>` : ""}</div>
+      ${shareActions}</div>`;
+  }
+
   function grokAuditCard(data) {
     const audit = data && typeof data === "object" ? data.grok_audit : null;
     if (!audit || typeof audit !== "object") return "";
@@ -204,7 +241,7 @@
   function applyResults(root, scores) {
     const judge = (typeof window !== "undefined" && window.Simple?.pickOutcome) || (() => null);
     root.querySelectorAll(".coupon-card").forEach((card) => {
-      const legs = [...card.querySelectorAll("tr[data-coupon-leg]")].map((row) => {
+      const legs = [...card.querySelectorAll("[data-coupon-leg]")].map((row) => {
         const score = scores.get(row.dataset.couponLeg) || scores.get("iddaa:" + row.dataset.couponLeg);
         const outcome = judge(row.dataset.market, score);
         const cell = row.querySelector(".leg-result");
@@ -223,7 +260,7 @@
     });
   }
 
-  const api = { applyResults, couponOutcome, alternatives, couponCard, couponGroup, emptyReason, grokAuditCard, grokBadge, researchBadge };
+  const api = { applyResults, couponOutcome, alternatives, couponCard, couponGroup, emptyReason, grokAuditCard, grokBadge, researchBadge, mainCoupon, simpleCard };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.CouponView = api;
 })();

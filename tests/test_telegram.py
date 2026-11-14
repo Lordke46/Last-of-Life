@@ -66,37 +66,31 @@ class MessageTest(unittest.TestCase):
         self.assertIn("BANKO", text)
         self.assertNotIn("SÜRPRİZ", text)
 
-    def test_banko_message_marks_limited_calibration(self):
-        p = pick(1, "1")
-        p.update(calibration_applied=False, calibration_n=18)
-        text = tg.format_coupon_message("2026-10-17", [coupon("banko", [p])])
-        self.assertIn("kalibrasyon verisi sınırlı (18/30)", text)
-        self.assertIn("model/piyasa tahmini", text)
-
-    def test_banko_message_explains_probability_and_price(self):
+    def test_coupon_message_is_plain_list_with_total_and_stake(self):
         p = pick(1, "1", odds=1.8, p=.7)
-        p.update(model_probability=.74, market_probability=.64, calibration_n=53,
-                 calibration_applied=True, data_n=17, value=.26)
-        text = tg.format_coupon_message("2026-10-17", [coupon("banko", [p])])
-        self.assertIn("model %74", text)
-        self.assertIn("piyasa %64", text)
-        self.assertIn("kalibrasyon 53", text)
-        self.assertIn("değer %+26.0", text)
+        p.update(model_probability=.74, calibration_n=53, calibration_applied=True)
+        c = {**coupon("banko", [p, pick(2, "Ü2.5", kickoff="2026-10-17T12:00Z")]), "stake_plan": {"percent": 1.5}}
+        text = tg.format_coupon_message("2026-10-17", [tg._compact_coupon(c)])
+        self.assertIn("• 15:00 H2 – A&amp;2 → <b>2.5 Üst</b> (1.50)\n• 17:00 H1 – A&amp;1 → <b>MS 1</b> (1.80)", text)
+        self.assertIn("Toplam oran <b>3.00</b> · tutma ihtimali %60", text)
+        self.assertIn("Önerilen miktar: kasanın %1.5'i", text)
+        self.assertNotIn("model %", text)
+        self.assertNotIn("kalibrasyon", text)
 
     def test_fallback_coupon_is_marked_and_target_flag_survives_compaction(self):
         met = tg.format_coupon_message("2026-10-17", [{**coupon("banko", [pick(1, "1")]), "target_met": True}])
-        self.assertNotIn("hedef bandı dışı", met)
+        self.assertNotIn("yedek kupon", met)
         compact = tg._compact_coupon({**coupon("surprise", [pick(1, "1")]), "target_met": False,
                                       "stake_note": "düşük kasa"})
         self.assertEqual((compact["target_met"], compact["stake_note"]), (False, "düşük kasa"))
-        self.assertIn("hedef bandı dışı", tg.format_coupon_message("2026-10-17", [compact]))
+        self.assertIn("yedek kupon", tg.format_coupon_message("2026-10-17", [compact]))
 
     def test_only_surprise_sends_explicit_no_bank_statement(self):
         text = tg.format_coupon_message(
             "2026-10-17", [coupon("surprise", [pick(1, "2")])],
             banko_note="Yeterli kanıt bulunamadı.",
         )
-        self.assertIn("Banko paylaşılmadı", text)
+        self.assertIn("Banko yok", text)
         self.assertIn("Yeterli kanıt", text)
 
     def test_settle_waits_for_unfinished_then_voids_after_timeout(self):
@@ -194,6 +188,20 @@ class DailyCouponTest(DbTestCase):
         with db.session() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) n FROM telegram_posts").fetchone()["n"], 0)
 
+    def test_grok_replacement_is_sent_instead_of_vetoed_coupon(self):
+        from app import grok_audit
+        swap = {**coupon("banko_grok", [pick(5, "X2", odds=1.4)]), "grok_note": "Grok veto'su: H1 - A&1"}
+        with patch.object(grok_audit, "decorate", lambda built, now=None: {**built, "banko_grok": swap}):
+            self.assertEqual(tg.post_daily_coupons(self.morning, self.send, build=self.built()), "kupon: gönderildi")
+        text = self.sent[0][0]
+        self.assertIn("BANKO (Grok değişimi)", text)
+        self.assertIn("H5 – A&amp;5", text)
+        self.assertNotIn("H1 –", text)
+        self.assertIn("Önerilen miktar", text)
+        with db.session() as conn:
+            payload = json.loads(conn.execute("SELECT payload FROM telegram_posts WHERE kind='coupon'").fetchone()[0])
+        self.assertEqual([c["type"] for c in payload], ["banko_grok"])
+
     def test_failed_send_releases_claim_so_next_run_retries(self):
         def failing(text, reply_to=None):
             raise tg.TelegramError("kapalı")
@@ -208,6 +216,25 @@ class DailyCouponTest(DbTestCase):
         self.assertTrue(tg.claim("2026-10-17", "coupon", self.morning + timedelta(minutes=tg.STALE_CLAIM_MINUTES + 1)))
         tg.mark_sent("2026-10-17", "coupon", "9", self.morning)
         self.assertFalse(tg.claim("2026-10-17", "coupon", self.morning + timedelta(days=1)))
+
+
+class WeeklyTest(DbTestCase):
+    def test_monday_summary_sent_once_after_ten(self):
+        from app.model import coupon_history as ch
+        week = [{"date": "2026-10-12", "banko": {"status": "won", "effective_odds": 2.0, "picks": []}, "surprise": None},
+                {"date": "2026-10-18", "banko": {"status": "lost", "effective_odds": 1.8, "picks": [{"status": "lost", "clv": .05}]},
+                 "surprise": {"status": "won", "effective_odds": 4.0, "picks": []}},
+                {"date": "2026-10-19", "banko": {"status": "lost", "effective_odds": 9, "picks": []}}]  # bugünkü sayılmaz
+        monday = datetime(2026, 10, 19, 6, 0, tzinfo=UTC)  # 09:00 TR
+        with patch.object(ch, "history", lambda conn, days=14: {"days": week}):
+            self.assertEqual(tg.post_weekly_summary(monday, self.send), "haftalık: zamanı değil")
+            self.assertEqual(tg.post_weekly_summary(monday + timedelta(hours=2), self.send), "haftalık: gönderildi")
+            self.assertEqual(tg.post_weekly_summary(monday + timedelta(hours=3), self.send), "haftalık: zaten gönderildi")
+        text = self.sent[0][0]
+        self.assertIn("12 Ekim – 18 Ekim", text)
+        self.assertIn("💎 BANKO: 1 kazandı / 1 kaybetti · kâr <b>+0 TL</b>", text)
+        self.assertIn("🎲 SÜRPRİZ: 1 kazandı / 0 kaybetti · kâr <b>+300 TL</b>", text)
+        self.assertIn("CLV): %+5.0 (1 seçim)", text)
 
 
 class ResultsTest(DbTestCase):
@@ -225,12 +252,15 @@ class ResultsTest(DbTestCase):
     def test_waits_for_all_matches_then_replies_once(self):
         now = datetime(2026, 10, 17, 18, 0, tzinfo=UTC)
         self.finish(1, 2, 0)
-        self.assertEqual(tg.post_results(now, self.send), ["sonuç 2026-10-17: maçlar bitmedi"])
+        self.assertEqual(tg.post_results(now, self.send),
+                         ["bacak 2026-10-17: H1 - A&1 won", "sonuç 2026-10-17: maçlar bitmedi"])
+        self.assertEqual(tg.post_results(now, self.send), ["sonuç 2026-10-17: maçlar bitmedi"])  # bacak bir kez
+        self.assertIn("✅ H1 – A&amp;1 <b>2-0</b> → MS 1", self.sent[0][0])
         self.finish(2, 1, 1)
         self.assertEqual(tg.post_results(now, self.send), ["sonuç 2026-10-17: gönderildi"])
         self.assertEqual(tg.post_results(now, self.send), [])
-        self.assertEqual(len(self.sent), 1)
-        text, reply_to = self.sent[0]
+        self.assertEqual(len(self.sent), 2)
+        text, reply_to = self.sent[1]
         self.assertEqual(reply_to, "101")  # kupon mesajına yanıt
         self.assertIn("KAZANDI", text)
         self.assertIn("2-0", text)
@@ -254,13 +284,23 @@ class ResultsTest(DbTestCase):
         early = datetime(2026, 10, 17, 15, 0, tzinfo=UTC)  # 14:00Z başlangıçtan 1 saat sonra
         self.finish(1, 2, 0)
         calls = []
-        self.assertEqual(tg.post_results(early, self.send, fetch_results=lambda d: calls.append(d) or {}),
-                         ["sonuç 2026-10-17: maçlar bitmedi"])
+        self.assertEqual(tg.post_results(early, self.send, fetch_results=lambda d: calls.append(d) or {})[-1],
+                         "sonuç 2026-10-17: maçlar bitmedi")
         self.assertEqual(calls, [])
         late = datetime(2026, 10, 17, 18, 0, tzinfo=UTC)
-        self.assertEqual(tg.post_results(late, self.send), ["sonuç 2026-10-17: maçlar bitmedi"])
-        self.assertEqual(self.sent, [])
+        self.assertEqual(tg.post_results(late, self.send)[-1], "sonuç 2026-10-17: maçlar bitmedi")
 
+
+    def test_lost_leg_reply_says_coupon_lost_while_other_coupon_pending(self):
+        with db.session() as conn:
+            conn.execute("UPDATE telegram_posts SET payload=? WHERE kind='coupon'", (json.dumps([
+                coupon("banko", [pick(1, "1")]), coupon("surprise", [pick(3, "2", kickoff="2026-10-18T14:00Z")])]),))
+        self.finish(1, 0, 1)
+        out = tg.post_results(datetime(2026, 10, 17, 18, 0, tzinfo=UTC), self.send)
+        self.assertEqual(out[-1], "sonuç 2026-10-17: maçlar bitmedi")
+        self.assertIn("❌", self.sent[0][0])
+        self.assertIn("Bu kupon kaybetti", self.sent[0][0])
+        self.assertEqual(self.sent[0][1], "101")
 
     def test_saved_live_scores_back_up_iddaa_results_feed(self):
         with db.session() as conn:

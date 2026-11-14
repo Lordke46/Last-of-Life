@@ -126,6 +126,7 @@ API: `/api/coupons?day=YYYY-MM-DD`. Testler: `.venv/bin/python -m unittest disco
 
 **Grok denetimi** (isteğe bağlı, abonelik yeterli, API yok): günde tek prompt ile Grok günün kuponlarını haber,
 kadro ve motivasyon açısından denetler; bacak bazında `tut / dikkat / veto` der. Grok olasılık üretmez;
+Grok Bot raporundaki doğrulanmış erteleme/iptal de otomatik veto sayılır (elle girilen karar her zaman önceliklidir);
 veto'lu bacak varsa motor aynı türün veto'suz, henüz başlamamış ilk alternatifine geçer ve bunu `banko_grok` /
 `surprise_grok` türüyle ayrı ölçer. Brief `GET /api/coupons/brief?kind=daily|lineup|weekly` (herkese açık),
 karar yönetici panelinden `POST /api/coupons/grok-audit` ile girilir. Kurulum ve şema: `docs/GROK_KUPON_DENETIMI.md`.
@@ -149,6 +150,11 @@ ve günlük liste vardır. CLV (closing line value) = kaydedilen oran / maçtan 
 başladıktan sonra `iddaa_odds_history` (dondurmada saklanan etkinlik kimliğiyle) ya da `odds_log` üzerinden
 `saved_coupon_picks.closing_odds` yazılır. Sürekli pozitif CLV, kâr küçük örneklemde şansa bağlı kalsa da seçimlerin piyasadan
 önce doğru yönü bulduğunu gösterir. API: `GET /api/coupon-history?days=60`. Kod: `app/model/coupon_history.py`.
+
+**Kendini düzelten seçim:** son 90 günde en az 10 kapanış oranı kaydı olan bir lig ya da pazar ortalama CLV'si −%3'ün
+altındaysa (piyasayı sürekli geride bırakamıyorsa) motor o lig/pazarı atlar (`rules.clv_blocked`). Bir kuponda en fazla 1
+yalnız-piyasa (küçük lig/milli maç, model verisi olmayan) bacak bulunur; başka seçenek yoksa kural gevşer. Sürpriz kupon
+hedef bandını 2 bacakla tutturabiliyorsa 3 bacağa gitmez (iddaa MBS 3 olan günlerde 3 bacak zorunludur).
 
 Web ve Telegram günün ilk kaydedilen Banko/Sürpriz kuponunu ortak kayıttan okur. Her kaydın
 `coupon_id` / `published_at` bilgisi vardır; sonradan hesaplanan alternatifler arayüzde ayrı etiketlenir.
@@ -184,6 +190,13 @@ yanıt olarak yazar; skorlar ESPN, iddaa sonuç servisi ve canlı akışın kayd
 gönderir. Aynı gün/tür ikinci kez gönderilmez: `telegram_posts`
 tablosundaki (gün, tür) kaydı önce alınır, gönderim başarısız olursa bırakılır ve sonraki çalıştırmada
 tekrar denenir. `TELEGRAM_BOT_TOKEN` veya `TELEGRAM_CHAT_ID` tanımlı değilse hiçbir şey yapmadan çıkar.
+
+Mesajlar sadedir: her kupon için `• saat Ev – Dep → seçim (oran)`, toplam oran, tutma ihtimali ve önerilen
+miktar (çeyrek Kelly, kasanın %0.5–3'ü; son 7 gün zarardaysa yarıya iner). Gün içinde biten her bacak kupon
+mesajına ✅/❌ yanıtı olarak bir kez yazılır; Pazartesi 10:00'dan sonra geçen haftanın özeti (kazanan/kaybeden,
+kâr, ROI, CLV) gönderilir. Grok Bot raporunda **doğrulanmış erteleme/iptal** varsa (ya da elle Grok veto'su
+kaydedildiyse) yayımlanan kupon yerine veto'suz ilk alternatif "Grok değişimi" olarak gönderilir; doğrulanmış
+sakatlık/ceza yalnızca "dikkat" işareti koyar.
 
 Kurulum (bir kez):
 1. Telegram'da **@BotFather** → `/newbot` ile bot oluşturun, verdiği **token**'ı kopyalayın.

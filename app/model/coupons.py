@@ -39,7 +39,8 @@ TIERS = {
         "fallback": "in_band_first",   # hedef tutmazsa önce yüksek olasılıklı bacaklar
     },
     "surprise": {
-        "picks": (2, 4),
+        "picks": (2, 3),            # 4 bacak yok; 3. bacak yalnız MBS 3 zorunluluğunda ya da 2'li hedef yokken
+        "preferred_picks": 2,       # aynı toplam orana 2 maçla ulaşan hedef kupon her zaman önce gelir
         "leg_odds": (1.40, 3.50),
         "leg_min_p": .33,           # şansa değil, hâlâ makul olasılığa dayanan yüksek oran
         "total_odds": (4.50, 15.0),
@@ -63,6 +64,29 @@ SURPRISE_MARKETS = SUPPORTED_MARKETS
 SELECTION_POLICY = 'hit_probability_v4'
 
 MAX_COUPON_ODDS_AGE = timedelta(hours=2)
+MAX_MARKET_ONLY_LEGS = 1   # yalnız bülten fiyatına dayanan bacak: hedef kuponda en fazla 1 (yoksa yedek)
+CLV_MIN_PICKS = 10          # lig/pazar elemesi için en az bu kadar kapanış oranlı kayıt
+CLV_BLOCK_BELOW = -0.03     # ortalama CLV bunun altındaysa lig/pazar kupona alınmaz
+CLV_LOOKBACK_DAYS = 90
+
+
+def clv_blocklist(conn, now: datetime | None = None) -> dict[str, set[str]]:
+    """Kapanış oranını sürekli yenemediğimiz lig ve pazarlar: piyasa bize karşı hareket ediyorsa
+    o seçimlerde avantajımız yok demektir. Yeterli kayıt yoksa hiçbir şey elenmez."""
+    since = ((now or datetime.now(timezone.utc)) - timedelta(days=CLV_LOOKBACK_DAYS)).astimezone(TZ).date().isoformat()
+    stats = {"league": {}, "market": {}}
+    try:
+        rows = conn.execute("SELECT DISTINCT match_id, league, market, odds, closing_odds FROM saved_coupon_picks "
+                            "WHERE day >= ? AND closing_odds > 1 AND odds > 1 AND status != 'void'", (since,)).fetchall()
+    except Exception:  # noqa: BLE001 — eski şema/erişim sorunu kupon üretimini durdurmaz
+        return {"league": set(), "market": set()}
+    for r in rows:
+        clv = r["odds"] / r["closing_odds"] - 1
+        for key in ("league", "market"):
+            stats[key].setdefault(r[key], []).append(clv)
+    return {key: {name for name, values in groups.items()
+                  if len(values) >= CLV_MIN_PICKS and sum(values) / len(values) < CLV_BLOCK_BELOW}
+            for key, groups in stats.items()}
 
 
 def _odds_age_minutes(stamp) -> int | None:
@@ -242,7 +266,7 @@ def _pool(matches: list[tuple[dict, list[dict]]], tier: dict) -> list[tuple[dict
     return pool
 
 
-def _select_balanced(entries, kind, limit, diagnostics=None):
+def _select_balanced(entries, kind, limit, diagnostics=None, blocked=None):
     """Hedef kuponu, yoksa gerçek fiyatlı en iyi alternatifi seç.
 
     Puanlama: hedefi sağlayan kombinasyonlar arasında en yüksek ortak olasılık; eşitlikte daha az
@@ -253,6 +277,7 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
         return []
     tier = TIERS[kind]
     banko = kind == 'banko'
+    blocked = blocked or {}
     sizes = tier["picks"]
     t_lo, t_hi = tier["total_odds"]
     pool, seen = [], set()
@@ -263,7 +288,8 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
               "selection_policy": SELECTION_POLICY, "objective": "max_joint_probability_above_total_odds_floor",
               "total_odds_floor": t_lo,
               "eligible_matches": 0, "low_mbs_matches": 0,
-              "combinations_rejected": 0, "valid_combinations": 0, "quality_rejected":0, "not_prematch":0}
+              "combinations_rejected": 0, "valid_combinations": 0, "quality_rejected":0, "not_prematch":0,
+              "clv_blocked": 0, "market_only_relaxed": 0}
     for prediction, choices in entries:
         mid = str(prediction.get('id',''))
         if not mid or mid in seen:
@@ -287,6 +313,9 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
             market_only=bool(prediction.get("small_league") or choice.get("market_only"))
             if choice['odds_source'] != 'iddaa' or choice['market'] not in SUPPORTED_MARKETS:
                 counts["no_market_quote"] += 1
+                continue
+            if (prediction.get("league") in blocked.get("league", ()) or choice["market"] in blocked.get("market", ())):
+                counts["clv_blocked"] += 1
                 continue
             if prediction.get("small_league") and (not prediction.get("data_availability", {}).get("market_probabilities")
                                                      or choice.get("market_p") is None):
@@ -327,7 +356,7 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
                 counts["low_mbs_matches"] += 1
             pool.append((prediction, _shortlist(candidates, tier))); seen.add(mid)
     pool = _pool(pool, tier)
-    target_candidates, fallback_in_band, fallback_total, fallback_any = [], [], [], []
+    target_candidates, target_relaxed, fallback_in_band, fallback_total, fallback_any = [], [], [], [], []
     for size in range(1, min(sizes[1], len(pool))+1):
         for match_combo in combinations(pool,size):
             for choices in product(*(cs for _,cs in match_combo)):
@@ -353,7 +382,10 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
                     distance = min(abs(total-t_lo), abs(total-t_hi))
                     score = (-distance, probability, -size)
                 record = (score, combo, signature, target_met, probability, total)
-                if target_met:
+                market_only = sum(bool(p.get("small_league") or c.get("market_only")) for p, c in combo)
+                if target_met and market_only > MAX_MARKET_ONLY_LEGS:
+                    target_relaxed.append(record)
+                elif target_met:
                     target_candidates.append(record)
                 elif total_ok:
                     fallback_total.append(record)
@@ -361,10 +393,19 @@ def _select_balanced(entries, kind, limit, diagnostics=None):
                     fallback_in_band.append(record)
                 else:
                     fallback_any.append(record)
+    preferred = tier.get("preferred_picks")
+    if preferred:
+        for bucket in (target_candidates, target_relaxed):
+            short = [r for r in bucket if len(r[1]) <= preferred]
+            if short:
+                bucket[:] = short
     counts["valid_combinations"] = len(target_candidates)
+    counts["market_only_relaxed"] = len(target_relaxed)
     order = ((fallback_in_band, fallback_total) if tier["fallback"] == "in_band_first"
              else (fallback_total, fallback_in_band))
-    candidates = target_candidates or order[0] or order[1] or fallback_any
+    # Takım modeli olmayan bacakları çoğunlukta tutan hedef kupon yalnız başka hedef kupon yoksa kullanılır
+    # (milli maç arası gibi günlerde de her gün kupon çıksın).
+    candidates = target_candidates or target_relaxed or order[0] or order[1] or fallback_any
     candidates = heapq.nlargest(max(1, limit * 12), candidates, key=lambda item: item[0])
     # Alternatifler önce ortak maçı olmayan kuponlardan seçilir ki kullanıcı gerçekten farklı
     # kuponlar görsün; yetmezse alt/üst küme olmayan örtüşen kombinasyonlar eklenir.
@@ -488,6 +529,7 @@ def select_small_league_alternatives(entries: list[tuple[dict, list[dict]]], lim
 def build_coupons(target: date) -> dict:
     entries = _day_entries(target)
     with session() as conn:
+        blocked = clv_blocklist(conn)
         constraints = load_constraints(conn)
         provenance = quote_provenance.load(conn)
         rows = conn.execute(
@@ -528,10 +570,10 @@ def build_coupons(target: date) -> dict:
     surprise_note = _tier_note("surprise")
     banko_diagnostics = {}
     banko_alternatives = [_coupon("banko", picks, banko_note)
-                          for picks in _select_balanced(daily_entries, "banko", BANKO_ALTERNATIVES, banko_diagnostics)]
+                          for picks in _select_balanced(daily_entries, "banko", BANKO_ALTERNATIVES, banko_diagnostics, blocked)]
     surprise_diagnostics = {}
     surprise_alternatives = [_coupon("surprise", picks, surprise_note)
-                             for picks in _select_balanced(daily_entries, "surprise", SURPRISE_ALTERNATIVES, surprise_diagnostics)]
+                             for picks in _select_balanced(daily_entries, "surprise", SURPRISE_ALTERNATIVES, surprise_diagnostics, blocked)]
     from ..research_trio import select as select_research_trio
     trio = select_research_trio(daily_entries)
     return {
@@ -550,6 +592,8 @@ def build_coupons(target: date) -> dict:
             "Bu kupon iddaa piyasa olasılıklarına dayanır; takım modeli güveni hesaplanmaz.")
             for picks in small_alternatives],
         "rules": {"selection_policy": SELECTION_POLICY,
+                  "clv_blocked": {k: sorted(v) for k, v in blocked.items()},
+                  "max_market_only_legs": MAX_MARKET_ONLY_LEGS,
                   "objective": "max_joint_probability_above_total_odds_floor",
                   "banko_min_probability": BANKO_MIN_P, "banko_min_total_probability": BANKO_MIN_TOTAL_P,
                   "banko_min_edge": BANKO_MIN_EDGE, "banko_min_data_n": BANKO_MIN_DATA_N,

@@ -24,7 +24,7 @@ from datetime import date, datetime, timedelta, timezone
 from .db import get_meta, init_db, session
 from .model.coupons import TZ, build_coupons
 from .model.settlement import outcome, selection_state, VOID_AFTER_DAYS
-from .model.coupon_history import daily_coupons, iddaa_results, _event_ids
+from .model.coupon_history import daily_coupons, iddaa_results, _event_ids, stake_plan
 from .scrapers import iddaa
 
 API_URL = "https://api.telegram.org/bot{token}/{method}"
@@ -40,7 +40,9 @@ MARKET_LABELS = {
     "X2": "Çifte Şans X-2", "Ü1.5": "1.5 Üst", "A1.5": "1.5 Alt", "Ü2.5": "2.5 Üst", "A2.5": "2.5 Alt",
     "Ü3.5": "3.5 Üst", "A3.5": "3.5 Alt", "KG Var": "KG Var", "KG Yok": "KG Yok",
 }
-COUPON_TITLES = {"banko": "💎 BANKO", "surprise": "🎲 SÜRPRİZ"}
+COUPON_TITLES = {"banko": "💎 BANKO", "surprise": "🎲 SÜRPRİZ",
+                 "banko_grok": "💎 BANKO (Grok değişimi)", "surprise_grok": "🎲 SÜRPRİZ (Grok değişimi)"}
+WEEKLY_WEEKDAY, WEEKLY_HOUR = 0, 10  # Pazartesi 10:00 TSİ'den sonra geçen haftanın özeti
 
 
 class TelegramError(RuntimeError):
@@ -109,40 +111,34 @@ def _compact_coupon(coupon: dict) -> dict:
     return {"type": coupon["type"], "total_odds": coupon["total_odds"],
             "total_probability": coupon["total_probability"],
             "coupon_id": coupon.get("coupon_id"), "published_at": coupon.get("published_at"),
-            **{k: coupon[k] for k in ("target_met", "stake_note") if k in coupon},
+            **{k: coupon[k] for k in ("target_met", "stake_note", "stake_plan", "grok_note") if k in coupon},
             "picks": [{**{k: p[k] for k in fields}, **{k: p[k] for k in extras if k in p}}
                       for p in coupon["picks"]]}
 
 
+def _stake_line(plan: dict | None) -> str | None:
+    return f"Önerilen miktar: kasanın %{plan['percent']:g}'i" if plan else None
+
+
 def format_coupon_message(day: str, coupons: list[dict], banko_note: str | None = None) -> str:
+    """Sade mesaj: her kupon için maç → oynanacak seçim (oran), altta toplam oran ve önerilen miktar."""
     lines = [f"🎯 <b>Günlük Kupon</b> · {_day_label(day)}"]
     for c in coupons:
-        tier = "" if c.get("target_met", True) else " · <i>hedef bandı dışı, günün en iyi yedeği</i>"
-        lines += ["", f"{COUPON_TITLES[c['type']]} · toplam oran <b>{c['total_odds']:.2f}</b>"
-                      f" · tutma %{c['total_probability'] * 100:.0f}{tier}"]
+        lines += ["", f"<b>{COUPON_TITLES.get(c['type'], c['type'])}</b>"]
+        if c.get("grok_note"):
+            lines.append(f"<i>♻️ {_esc(c['grok_note'])}</i>")
         for p in sorted(c["picks"], key=lambda x: x["kickoff"]):
-            lines.append(f"• {_kickoff_tr(p['kickoff'])} {_esc(p['league_name'])} — "
-                         f"{_esc(p['home'])} - {_esc(p['away'])} → <b>{_esc(_label(p['market']))}</b> "
-                         f"({p['odds']:.2f} · tahmini %{p['p'] * 100:.0f})")
-            if c["type"] == "banko":
-                parts = []
-                if isinstance(p.get("model_probability"), (int, float)):
-                    parts.append(f"model %{p['model_probability']*100:.0f}")
-                if isinstance(p.get("market_probability"), (int, float)):
-                    parts.append(f"piyasa %{p['market_probability']*100:.0f}")
-                if p.get("calibration_applied"):
-                    parts.append(f"kalibrasyon {p['calibration_n']} geçmiş seçim")
-                elif "calibration_applied" in p:
-                    parts.append(f"kalibrasyon verisi sınırlı ({p.get('calibration_n', 0)}/30); model/piyasa tahmini")
-                if isinstance(p.get("data_n"), (int, float)):
-                    parts.append(f"veri ~{p['data_n']:.0f} maç")
-                if isinstance(p.get("value"), (int, float)):
-                    parts.append(f"tahmini değer %{p['value']*100:+.1f}")
-                if parts:
-                    lines.append("  ↳ " + " · ".join(parts))
-    if banko_note and not any(c["type"] == "banko" for c in coupons):
-        lines += ["", "💎 <b>Banko paylaşılmadı:</b> " + _esc(banko_note)]
-    lines += ["", "<i>Yüzdeler istatistiksel tahmindir; kalibrasyon geçmiş veriyle sınırlıdır. Garanti değildir.</i>"]
+            lines.append(f"• {_kickoff_tr(p['kickoff'])} {_esc(p['home'])} – {_esc(p['away'])} → "
+                         f"<b>{_esc(_label(p['market']))}</b> ({p['odds']:.2f})")
+        total = f"Toplam oran <b>{c['total_odds']:.2f}</b> · tutma ihtimali %{c['total_probability'] * 100:.0f}"
+        if not c.get("target_met", True):
+            total += " · <i>yedek kupon</i>"
+        lines.append(total)
+        if stake := _stake_line(c.get("stake_plan")):
+            lines.append(stake)
+    if banko_note and not any(c["type"].startswith("banko") for c in coupons):
+        lines += ["", "💎 <b>Banko yok:</b> " + _esc(banko_note)]
+    lines += ["", "<i>İstatistiksel tahmindir, garanti değildir.</i>"]
     return "\n".join(lines)
 
 
@@ -151,19 +147,27 @@ def pick_outcome(market: str, home_goals: int, away_goals: int) -> bool | None:
     return outcome(market, home_goals, away_goals)
 
 
-def settle_coupon(coupon: dict, results: dict[str, dict], now: datetime) -> dict | None:
-    """Kuponu değerlendirir. Kaybeden bacak yoksa ve bitmemiş (henüz sonuçsuz sayılmayan) maç varsa None döner;
-    bir bacak kaybettiyse kupon kalan maçları beklemeden kaybetmiş sayılır.
-    Dönüş: {"status": won|lost|void, "odds": etkin oran, "picks": [{...pick, state, score}]}."""
-    settled, odds = [], 1.0
+def leg_states(coupon: dict, results: dict[str, dict], now: datetime) -> list[dict]:
+    """Her bacağın durumu (won|lost|void|pending) ve skoru."""
+    out = []
     for p in coupon["picks"]:
         res = results.get(str(p["id"])) or {}
         state = selection_state(p["market"], p["kickoff"], now, completed=res.get("completed"),
                                 home_goals=res.get("home_goals"), away_goals=res.get("away_goals"), status=res.get("status"))
         score = f"{res['home_goals']}-{res['away_goals']}" if state in ("won", "lost") else None
-        if state == "won":
+        out.append({**p, "state": state, "score": score})
+    return out
+
+
+def settle_coupon(coupon: dict, results: dict[str, dict], now: datetime) -> dict | None:
+    """Kuponu değerlendirir. Kaybeden bacak yoksa ve bitmemiş (henüz sonuçsuz sayılmayan) maç varsa None döner;
+    bir bacak kaybettiyse kupon kalan maçları beklemeden kaybetmiş sayılır.
+    Dönüş: {"status": won|lost|void, "odds": etkin oran, "picks": [{...pick, state, score}]}."""
+    settled = leg_states(coupon, results, now)
+    odds = 1.0
+    for p in settled:
+        if p["state"] == "won":
             odds *= p["odds"]
-        settled.append({**p, "state": state, "score": score})
     states = {s["state"] for s in settled}
     if "pending" in states and "lost" not in states:
         return None
@@ -175,7 +179,7 @@ def format_result_message(day: str, settled: dict[str, dict]) -> str:
     lines = [f"📊 <b>Kupon Sonuçları</b> · {_day_label(day)}"]
     verdict = {"won": "✅ KAZANDI", "lost": "❌ KAYBETTİ", "void": "⚪ İPTAL"}
     icons = {"won": "✅", "lost": "❌", "void": "⚪", "pending": "⏳"}
-    for kind in ("banko", "surprise"):
+    for kind in COUPON_TITLES:
         if kind not in settled:
             continue
         s = settled[kind]
@@ -187,6 +191,37 @@ def format_result_message(day: str, settled: dict[str, dict]) -> str:
             score = p["score"] or ("bekleniyor" if p["state"] == "pending" else "sonuç yok")
             lines.append(f"{icons[p['state']]} {_esc(p['home'])} - {_esc(p['away'])} <b>{score}</b> "
                          f"→ {_esc(_label(p['market']))} ({p['odds']:.2f})")
+    return "\n".join(lines)
+
+
+def format_leg_message(coupon_type: str, leg: dict, coupon_lost: bool) -> str:
+    icon = "✅" if leg["state"] == "won" else "❌"
+    text = (f"{icon} {_esc(leg['home'])} – {_esc(leg['away'])} <b>{leg['score']}</b> → "
+            f"{_esc(_label(leg['market']))} ({leg['odds']:.2f}) · {COUPON_TITLES.get(coupon_type, coupon_type)}")
+    if coupon_lost:
+        text += "\n<i>Bu kupon kaybetti.</i>"
+    return text
+
+
+def format_weekly_message(start: date, end: date, summary: dict[str, dict]) -> str:
+    lines = [f"📅 <b>Haftalık Özet</b> · {start.day} {MONTHS[start.month - 1]} – {end.day} {MONTHS[end.month - 1]}"]
+    for kind in ("banko", "surprise", "total"):
+        s = summary.get(kind)
+        if not s or not s["coupons"]:
+            continue
+        title = "📊 Toplam" if kind == "total" else COUPON_TITLES[kind]
+        line = f"{title}: {s['won']} kazandı / {s['lost']} kaybetti"
+        if s["pending"]:
+            line += f" / {s['pending']} bekliyor"
+        if s["roi"] is not None:
+            line += f" · kâr <b>{s['profit']:+.0f} TL</b> (ROI %{s['roi'] * 100:+.0f})"
+        lines.append(line)
+    total = summary.get("total") or {}
+    if total.get("clv") is not None:
+        lines.append(f"📈 Kapanış oranı farkı (CLV): %{total['clv'] * 100:+.1f} ({total['clv_picks']} seçim)")
+    if len(lines) == 1:
+        lines.append("Bu hafta kayıtlı kupon yok.")
+    lines += ["", "<i>Her kupona 100 TL yatırılmış gibi hesaplanır.</i>"]
     return "\n".join(lines)
 
 
@@ -249,8 +284,19 @@ def post_daily_coupons(now: datetime, send, force: bool = False, day: date | Non
     diagnostics = built.get("banko_diagnostics") or {}
     if diagnostics:
         print("Banko aday elemesi: " + json.dumps(diagnostics, ensure_ascii=False), flush=True)
+    try:
+        from . import grok_audit
+        built = grok_audit.decorate(built, now=now)
+    except Exception as exc:  # noqa: BLE001 - Grok/araştırma okunamazsa kupon yine gönderilir
+        print(f"Grok kararları uygulanamadı: {type(exc).__name__}", flush=True)
     coupons = []
     for kind in ("banko", "surprise"):
+        replacement = built.get(f"{kind}_grok")
+        if replacement and replacement.get("picks"):
+            # Doğrulanmış erteleme/iptal veya elle veto: dondurulmuş Grok alternatifi gönderilir.
+            coupons.append(_compact_coupon({**replacement, "stake_plan": replacement.get("stake_plan")
+                                            or stake_plan(replacement)}))
+            continue
         published = built[kind]
         if not published["picks"]:
             continue
@@ -328,6 +374,8 @@ def post_results(now: datetime, send, fetch_results=None) -> list[str]:
             if s is None:
                 break
             settled[c["type"]] = s
+        if len(settled) < len(coupons):
+            out += _post_leg_updates(row["day"], coupons, results, now, send, row["message_id"])
         else:
             sent = _post_once(row["day"], "result", now, None, format_result_message(row["day"], settled),
                               send, reply_to=row["message_id"])
@@ -335,6 +383,45 @@ def post_results(now: datetime, send, fetch_results=None) -> list[str]:
             continue
         out.append(f"sonuç {row['day']}: maçlar bitmedi")
     return out
+
+
+def _post_leg_updates(day, coupons, results, now, send, reply_to) -> list[str]:
+    """Kupon sonucu henüz kesinleşmemişken biten her bacağı (✅/❌) bir kez yanıt olarak yazar."""
+    with session() as conn:
+        done = {r["kind"] for r in conn.execute(
+            "SELECT kind FROM telegram_posts WHERE day=? AND kind LIKE 'leg:%'", (day,))}
+    out = []
+    for c in coupons:
+        legs = leg_states(c, results, now)
+        lost = any(p["state"] == "lost" for p in legs)
+        for leg in legs:
+            kind = f"leg:{c['type']}:{leg['id']}"
+            if leg["state"] not in ("won", "lost") or kind in done:
+                continue
+            if _post_once(day, kind, now, None, format_leg_message(c["type"], leg, lost), send, reply_to):
+                out.append(f"bacak {day}: {leg['home']} - {leg['away']} {leg['state']}")
+    return out
+
+
+def post_weekly_summary(now: datetime, send) -> str:
+    """Pazartesi 10:00 TSİ'den sonra geçen haftanın (Pzt–Paz) kupon özetini bir kez gönderir."""
+    from .model import coupon_history
+    local = now.astimezone(TZ)
+    if local.weekday() != WEEKLY_WEEKDAY or local.hour < WEEKLY_HOUR:
+        return "haftalık: zamanı değil"
+    end = local.date() - timedelta(days=1)
+    start = end - timedelta(days=6)
+    with session() as conn:
+        if conn.execute("SELECT 1 FROM telegram_posts WHERE day=? AND kind='weekly'",
+                        (local.date().isoformat(),)).fetchone():
+            return "haftalık: zaten gönderildi"
+        days = coupon_history.history(conn, days=14)["days"]
+    week = [d for d in days if start.isoformat() <= d["date"] <= end.isoformat()]
+    picked = {k: [d[k] for d in week if d.get(k)] for k in ("banko", "surprise")}
+    summary = {k: coupon_history._summary(v) for k, v in picked.items()}
+    summary["total"] = coupon_history._summary(picked["banko"] + picked["surprise"])
+    sent = _post_once(local.date().isoformat(), "weekly", now, None, format_weekly_message(start, end, summary), send)
+    return "haftalık: gönderildi" if sent else "haftalık: başka çalıştırma gönderiyor/gönderdi"
 
 
 def post_grok_audits(now: datetime, send) -> list[str]:
@@ -400,7 +487,8 @@ def main(argv=None) -> int:
     steps = [lambda: [post_daily_coupons(now, send, force=args.force,
                                          day=date.fromisoformat(args.day) if args.day else None)],
              lambda: post_results(now, send, fetch_results=saved_and_iddaa_results),
-             lambda: post_grok_audits(now, send)]
+             lambda: post_grok_audits(now, send),
+             lambda: [post_weekly_summary(now, send)]]
     for step in steps:  # biri hata verse de diğeri denenir
         try:
             lines += step()

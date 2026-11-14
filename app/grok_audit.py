@@ -92,6 +92,7 @@ RESEARCH_NOTE_TTL = timedelta(minutes=5)
 RESEARCH_FINDINGS = 6
 RESEARCH_STATUSES = ("confirmed", "reported", "conflicting", "unknown")
 RESEARCH_CATEGORIES = ("injury", "suspension", "lineup", "fixture_load", "form", "news", "other")
+POSTPONED_RE = re.compile(r"ertelen|iptal|postpone|cancel|called off|abandon", re.I)
 _research_cache: dict = {}
 
 
@@ -118,8 +119,10 @@ def research_note(payload: dict, report_id: str, revision, researched_at) -> dic
     lineup_status = lineup.get("lineup_status") if lineup.get("lineup_status") in ("predicted", "official") else "unknown"
     risks = [_clean(r, 160) for r in (payload.get("risks") or []) if isinstance(r, str) and r.strip()][:3]
     summary = _clean(payload["summary"], 400) if isinstance(payload.get("summary"), str) else ""
+    postponed = next((f["statement"] for f in findings if f["status"] == "confirmed"
+                      and POSTPONED_RE.search(f["statement"])), None)
     return {"report_id": str(report_id), "revision": revision, "researched_at": researched_at,
-            "summary": summary or None, "findings": findings[:RESEARCH_FINDINGS], "findings_count": len(findings),
+            "summary": summary or None, "postponed": postponed, "findings": findings[:RESEARCH_FINDINGS], "findings_count": len(findings),
             "lineup_status": lineup_status, "risks": risks,
             "sources": len(payload["sources"]) if isinstance(payload.get("sources"), list) else 0}
 
@@ -484,6 +487,24 @@ def version() -> str:
 
 
 # --- Uygulama ------------------------------------------------------------------------
+def research_verdicts(notes: dict[str, dict]) -> dict[str, dict]:
+    """Elle denetim olmasa da Grok Bot raporundan otomatik karar: doğrulanmış erteleme/iptal → veto,
+    doğrulanmış sakatlık/ceza → dikkat. Elle kaydedilen denetim her zaman bunu ezer."""
+    out = {}
+    for mid, note in notes.items():
+        if note.get("postponed"):
+            verdict = {"verdict": "veto", "reason": note["postponed"]}
+        else:
+            hit = next((f for f in note.get("findings") or [] if f["status"] == "confirmed"
+                        and f["category"] in ("injury", "suspension")), None)
+            if not hit:
+                continue
+            verdict = {"verdict": "caution", "reason": hit["statement"]}
+        for key in (mid, "iddaa:" + mid):
+            out[key] = {**verdict, "match_id": key, "sources": [], "auto": True}
+    return out
+
+
 def _verdict_map(audits: list[dict | None]) -> dict[str, dict]:
     merged = {}
     for audit in audits:  # sonraki (kadro kontrolü) öncekini (günlük) ezer
@@ -521,7 +542,7 @@ def decorate(built: dict, now: datetime | None = None, conn=None) -> dict:
                 built[key] = [_annotate_research(c, notes) for c in built.get(key) or []]
     built["research"] = {"reports": len(notes)}
     audits = [load(conn, day, "daily"), load(conn, day, "lineup")]
-    verdicts = _verdict_map(audits)
+    verdicts = {**research_verdicts(notes), **_verdict_map(audits)}
     for kind in COUPON_KINDS:
         built[f"{kind}_grok"] = None
     if not verdicts:
@@ -566,11 +587,11 @@ def decorate(built: dict, now: datetime | None = None, conn=None) -> dict:
         else:
             built[f"{kind}_grok"] = None
             swaps.append({"kind": kind, "vetoed": vetoed, "coupon_id": None})
-    latest = max((a for a in audits if a), key=lambda a: a.get("received_at", ""))
+    latest = max((a for a in audits if a), key=lambda a: a.get("received_at", ""), default={})
     built["grok_audit"] = {"received_at": latest.get("received_at"), "research_time": latest.get("research_time"),
-                           "kinds": [a["kind"] for a in audits if a], "summary": latest.get("summary", ""),
-                           "vetoes": sum(v["verdict"] == "veto" for v in verdicts.values()),
-                           "cautions": sum(v["verdict"] == "caution" for v in verdicts.values()),
+                           "kinds": [a["kind"] for a in audits if a], "summary": latest.get("summary") or "Grok Bot araştırma raporlarından otomatik karar.",
+                           "vetoes": len({k.removeprefix("iddaa:") for k, v in verdicts.items() if v["verdict"] == "veto"}),
+                           "cautions": len({k.removeprefix("iddaa:") for k, v in verdicts.items() if v["verdict"] == "caution"}),
                            "swaps": swaps}
     return built
 

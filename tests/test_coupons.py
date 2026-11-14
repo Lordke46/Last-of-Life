@@ -570,3 +570,50 @@ class BuildCouponsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SelectionGuardTest(unittest.TestCase):
+    def test_surprise_prefers_two_legs_over_more_probable_three_leg_combo(self):
+        entries = [entry(i, {'1': (.5, 2.2)}) for i in (1, 2)] + [entry(i, {'1': (.75, 1.7)}) for i in (3, 4, 5)]
+        picks = select_surprise(entries)
+        self.assertEqual(len(picks), 2)
+        self.assertTrue(picks[0]['target_met'])
+
+    def test_banko_keeps_at_most_one_market_only_leg_when_possible(self):
+        entries = [entry(i, {'1': (.8, 1.4)}) for i in (1, 2)] + [entry(i, {'1': (.7, 1.4)}) for i in (3, 4)]
+        for p, choices in entries[:2]:
+            for c in choices:
+                c['market_only'] = True
+        picks = select_banko(entries)
+        self.assertEqual(len(picks), 2)
+        self.assertEqual(sum(bool(p.get('market_only')) for p in picks), 1)
+        only_market = select_banko(entries[:2])  # başka seçenek yoksa yine kupon çıkar
+        self.assertEqual(len(only_market), 2)
+
+    def test_leagues_and_markets_losing_to_closing_line_are_blocked(self):
+        import sqlite3
+        conn = sqlite3.connect(":memory:")
+        conn.row_factory = sqlite3.Row
+        conn.execute("CREATE TABLE saved_coupon_picks (day TEXT, match_id TEXT, league TEXT, market TEXT, odds REAL, "
+                     "closing_odds REAL, status TEXT)")
+        today = datetime.now(cp.TZ).date().isoformat()
+        rows = [(today, f"a{i}", "bad.1", "1", 1.8, 2.0, "lost") for i in range(cp.CLV_MIN_PICKS)]
+        rows += [(today, f"b{i}", "good.1", "KG Var", 2.0, 1.8, "won") for i in range(cp.CLV_MIN_PICKS)]
+        rows += [(today, f"c{i}", "few.1", "X", 1.5, 3.0, "lost") for i in range(cp.CLV_MIN_PICKS - 1)]
+        conn.executemany("INSERT INTO saved_coupon_picks VALUES (?,?,?,?,?,?,?)", rows)
+        blocked = cp.clv_blocklist(conn)
+        self.assertEqual(blocked["league"], {"bad.1"})
+        self.assertEqual(blocked["market"], {"1"})
+        entries = [entry(i, {'1': (.8, 1.4)}) for i in (1, 2)]
+        self.assertEqual(cp._select_balanced(entries, "banko", 1, blocked={"league": {"eng.1"}}), [])
+
+
+class StakePlanTest(unittest.TestCase):
+    def test_quarter_kelly_is_clamped_and_halved_after_losing_week(self):
+        from app.model.coupon_history import stake_plan
+        self.assertEqual(stake_plan({"total_probability": .6, "total_odds": 2.0})["percent"], 3.0)  # Kelly %20 → üst sınır
+        self.assertEqual(stake_plan({"total_probability": .55, "total_odds": 2.0})["percent"], 2.5)
+        self.assertEqual(stake_plan({"total_probability": .55, "total_odds": 2.0}, recent_profit=-1)["percent"], 1.3)
+        low = stake_plan({"total_probability": .3, "total_odds": 2.0})
+        self.assertEqual((low["percent"], "pozitif değil" in low["note"]), (0.5, True))
+        self.assertIsNone(stake_plan({"total_probability": None, "total_odds": 2.0}))

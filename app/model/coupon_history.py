@@ -23,6 +23,8 @@ log = logging.getLogger(__name__)
 
 STAKE = 100.0  # simülasyon: her gün, her kupona yatırılan TL
 KINDS = ("banko", "surprise")
+STAKE_MIN_PCT, STAKE_MAX_PCT = 0.5, 3.0  # kasanın yüzdesi
+STAKE_RECENT_DAYS = 7
 # Grok veto'su sonrası geçilen alternatifler; yayımlanan kupondan ayrı ölçülür (matematik ve yorum izi ayrı kalır).
 GROK_KINDS = tuple(f"{k}_grok" for k in KINDS)
 
@@ -130,6 +132,32 @@ def load_saved(conn, day: str, kind: str) -> dict | None:
                                         "target_met", "selection_tier", "grok_replaces", "grok_note") if k in metadata}}
 
 
+def stake_plan(coupon: dict, recent_profit: float | None = None) -> dict | None:
+    """Çeyrek Kelly, kasanın %0.5–3'ü ile sınırlı; son 7 gün zarardaysa yarıya iner."""
+    p, odds = coupon.get("total_probability"), coupon.get("total_odds")
+    if not isinstance(p, (int, float)) or not isinstance(odds, (int, float)) or odds <= 1:
+        return None
+    b = odds - 1
+    kelly = (p * b - (1 - p)) / b
+    pct = min(STAKE_MAX_PCT, max(STAKE_MIN_PCT, kelly / 4 * 100))
+    note = "çeyrek Kelly" if kelly > 0 else "değer pozitif değil, en düşük miktar"
+    if recent_profit is not None and recent_profit < 0:
+        pct = max(STAKE_MIN_PCT, pct / 2)
+        note += "; son 7 gün zararda, yarıya indirildi"
+    return {"percent": round(pct, 1), "note": note}
+
+
+def recent_profits(conn, today, days: int = STAKE_RECENT_DAYS) -> dict:
+    """Türe göre son günlerin yaklaşık kâr birimi (1 birim yatırım; iptal bacaklar yok sayılır)."""
+    since = (today - timedelta(days=days)).isoformat()
+    out = {}
+    for r in conn.execute("SELECT kind, status, total_odds FROM saved_coupons WHERE day>=? AND day<?",
+                          (since, today.isoformat())):
+        gain = (r["total_odds"] - 1) if r["status"] == "won" else -1 if r["status"] == "lost" else 0
+        out[r["kind"]] = out.get(r["kind"], 0) + gain
+    return out
+
+
 def daily_coupons(target, build=build_coupons) -> dict:
     """Web ve Telegram aynı (gün, tür) kaydını yayımlar; alternatifler canlı kalır."""
     from ..db import session
@@ -150,6 +178,15 @@ def daily_coupons(target, build=build_coupons) -> dict:
                     if signature(c) != signature(published)]
             built[kind] = published
             built[f"{kind}_alternatives"] = [published, *live]
+        try:
+            recent = recent_profits(conn, target)
+        except Exception:  # noqa: BLE001 - stake önerisi kuponu engellememeli
+            log.warning("stake geçmişi okunamadı", exc_info=True)
+            recent = {}
+    for kind in KINDS:
+        for key in (kind, f"current_{kind}"):
+            if built.get(key) and built[key].get("picks"):
+                built[key] = {**built[key], "stake_plan": stake_plan(built[key], recent.get(kind))}
     return built
 
 
