@@ -28,7 +28,7 @@ Kurulum bitti; döngü gözetimsiz: **06:30 TSİ** Actions kuyruğa yazar, **~07
 | `lol_source_reader` (`public` salt okunur + RLS SELECT policy'leri) | kurulu; Actions `RESEARCH_PILOT_SOURCE_DATABASE_URL` |
 | Servis anahtarı `grokbot` (son kullanma 2027-06-01) | kurulu; eski `grok-prod` anahtarı Codex pilotundan kaldı, dokunulmadı |
 | GitHub environment `research-pilot` (2 secret + 2 variable) | kurulu; webhook secret'ları yok (gerekmez) |
-| Repo değişkeni `RESEARCH_PILOT_ENABLED=1` | **açık** (14.11); cron her gün 03:30 UTC = 06:30 TSİ |
+| Repo değişkeni `RESEARCH_PILOT_ENABLED=1` | **açık** (14.11); cron her gün 06:30, 07:30, 08:30 TSİ (yedekli; zaten kuyruktaki maç tekrar yazılmaz, yeni iş varsa webhook tetiklenir) |
 | Grok Bot: Secure Form `LOL_RESEARCH_KEY`, Custom Rule (curl → API), Skill `lol-research-run`, zamanlı rutin her gün ~07:30 TSİ (±15 dk) | kuruldu 14.11; ilk otomatik run 15.11 |
 | Grok Bot webhook rutini | açık ama bağlı değil (GitHub secret'ı yok); isteğe bağlı |
 | Kaynak sınırı 40→100 (#83) | main'de, Vercel'de dağıtıldı |

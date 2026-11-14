@@ -99,3 +99,14 @@ button, a, input, select { touch-action: manipulation; }
 .coupon-card tr.leg-won td { background: rgba(22,163,74,.08); } .coupon-card tr.leg-lost td { background: rgba(220,38,38,.08); }
 .coupon-outcome .outcome-tag { vertical-align: middle; }
 .outcome-tag.outcome-pending { background: rgba(128,128,128,.18); color: var(--muted); }
+/* Sade kupon kartı: maç + ne oynanacağı */
+.coupon-simple .simple-legs { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 8px; }
+.coupon-simple .simple-leg { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.coupon-simple .simple-leg.leg-won { background: rgba(22,163,74,.08); border-color: rgba(22,163,74,.5); }
+.coupon-simple .simple-leg.leg-lost { background: rgba(220,38,38,.08); border-color: rgba(220,38,38,.5); }
+.coupon-simple .simple-leg-match { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.coupon-simple .simple-leg-time { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; }
+.coupon-simple .simple-leg-play { margin-top: 4px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.coupon-simple .simple-leg-play .iddaa-odd { margin-left: auto; font-size: 16px; }
+.coupon-simple .simple-leg-more summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.coupon-simple .simple-total { display: flex; flex-wrap: wrap; gap: 6px 16px; }

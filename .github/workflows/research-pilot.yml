@@ -6,7 +6,7 @@ name: Grok Bot research pilot
 # Setup: docs/GROK_BOT_PILOT.md
 on:
   schedule:
-    - cron: '30 3 * * *'   # 06:30 Türkiye
+    - cron: '30 3,4,5 * * *'   # 06:30, 07:30, 08:30 Türkiye (GitHub cron atlarsa yedek; kuyruk idempotent)
   workflow_dispatch:
     inputs:
       mode:

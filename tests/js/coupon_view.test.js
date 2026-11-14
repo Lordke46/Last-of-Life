@@ -197,3 +197,18 @@ test("coupon outcome: one lost leg loses, all won wins, live legs show progress,
   assert.equal(CouponView.couponOutcome(["won", null]), "pending");
   assert.equal(CouponView.couponOutcome([null, null]), null);
 });
+
+test("simple card shows match and what to play; grok replacement becomes the main coupon", () => {
+  const html = CouponView.simpleCard(coupon("banko", {stake_plan: {percent: 1.5, note: "çeyrek Kelly"}}), "banko");
+  assert.match(html, /Ev &lt;A&gt; – Dep B/);
+  assert.match(html, /Oyna: <b>1<\/b>/);
+  assert.match(html, /Toplam oran <b>1\.80<\/b>/);
+  assert.match(html, /kasanın %1,5'i/);
+  assert.match(html, /data-coupon-leg=/);
+  assert.doesNotMatch(html, /undefined|NaN/);
+  const grok = coupon("banko_grok", {publication: "grok", grok_note: "Grok veto'su: X - Y"});
+  const data = {banko: coupon("banko"), banko_grok: grok, surprise: {picks: []}};
+  assert.equal(CouponView.mainCoupon(data, "banko"), grok);
+  assert.equal(CouponView.mainCoupon(data, "surprise"), null);
+  assert.match(CouponView.simpleCard(grok, "banko"), /Grok değişimi/);
+});

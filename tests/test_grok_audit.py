@@ -397,7 +397,9 @@ class ResearchNoteTest(DbCase):
         self.assertEqual(banko["picks"][0]["research"]["findings"][0]["statement"], "Stoper sakat")
         self.assertEqual((banko["picks"][0]["odds"], banko["picks"][0]["p"]), (1.85, 0.5))
         self.assertEqual(decorated["research"], {"reports": 1})
-        self.assertIsNone(decorated["grok_audit"])
+        self.assertEqual((banko["picks"][0]["grok_verdict"], banko["picks"][0]["grok_reason"]), ("caution", "Stoper sakat"))
+        self.assertEqual((decorated["grok_audit"]["cautions"], decorated["grok_audit"]["vetoes"]), (1, 0))
+        self.assertIsNone(decorated["banko_grok"])
         self.assertNotIn("research", decorated["surprise"]["picks"][0])
         self.assertEqual(decorated["banko_alternatives"][2]["picks"][0]["research"]["report_id"], "r1")
         text = ga.brief(DAY, "daily", now=NOW, build=lambda d: built(d))
@@ -407,6 +409,23 @@ class ResearchNoteTest(DbCase):
         self.assertNotIn("revision", leg["arastirma"])
         self.assertIn('"arastirma" alanı', text)
         self.assertNotIn("arastirma", json.dumps(payload["kuponlar"][1], ensure_ascii=False))
+
+    def test_confirmed_postponement_in_report_vetoes_and_swaps_without_manual_audit(self):
+        postponed = {"findings": [{"category": "news", "statement": "Maç stadyum sorunu nedeniyle ertelendi",
+                                   "verification_status": "confirmed"}]}
+        self.insert_report("iddaa:b1", postponed, report_id="r1")
+        self.insert_report("s1", {"findings": [{"category": "news", "statement": "Maç ertelenebilir",
+                                                "verification_status": "reported"}]}, report_id="r2")
+        with patch.object(ga, "_now", lambda: NOW):
+            data = ga.decorate(self.daily(), now=NOW)
+        self.assertEqual(data["banko"]["picks"][0]["grok_verdict"], "veto")
+        self.assertEqual([p["id"] for p in data["banko_grok"]["picks"]], ["b2"])
+        self.assertEqual((data["grok_audit"]["vetoes"], data["grok_audit"]["kinds"]), (1, []))
+        self.assertNotIn("grok_verdict", data["surprise"]["picks"][0])  # doğrulanmamış haber karar üretmez
+        with db.session() as conn:
+            ga.save(conn, ga.parse(raw([verdict("b1", "keep", "")]), day=DAY.isoformat(), kind="daily", known={"b1"}))
+        ga._research_cache.clear()
+        self.assertEqual(ga.decorate(self.daily(), now=NOW)["banko"]["picks"][0]["grok_verdict"], "keep")  # elle denetim üstündür
 
 
 if __name__ == "__main__":
