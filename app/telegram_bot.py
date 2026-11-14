@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 
-from .db import init_db, session
+from .db import get_meta, init_db, session
 from .model.coupons import TZ, build_coupons
 from .model.settlement import outcome, selection_state, VOID_AFTER_DAYS
 from .model.coupon_history import daily_coupons, iddaa_results, _event_ids
@@ -152,20 +152,21 @@ def pick_outcome(market: str, home_goals: int, away_goals: int) -> bool | None:
 
 
 def settle_coupon(coupon: dict, results: dict[str, dict], now: datetime) -> dict | None:
-    """Kuponu değerlendirir. Bitmemiş (ve henüz sonuçsuz sayılmayan) maç varsa None döner.
+    """Kuponu değerlendirir. Kaybeden bacak yoksa ve bitmemiş (henüz sonuçsuz sayılmayan) maç varsa None döner;
+    bir bacak kaybettiyse kupon kalan maçları beklemeden kaybetmiş sayılır.
     Dönüş: {"status": won|lost|void, "odds": etkin oran, "picks": [{...pick, state, score}]}."""
     settled, odds = [], 1.0
     for p in coupon["picks"]:
         res = results.get(str(p["id"])) or {}
         state = selection_state(p["market"], p["kickoff"], now, completed=res.get("completed"),
                                 home_goals=res.get("home_goals"), away_goals=res.get("away_goals"), status=res.get("status"))
-        if state == "pending":
-            return None
         score = f"{res['home_goals']}-{res['away_goals']}" if state in ("won", "lost") else None
         if state == "won":
             odds *= p["odds"]
         settled.append({**p, "state": state, "score": score})
     states = {s["state"] for s in settled}
+    if "pending" in states and "lost" not in states:
+        return None
     status = "lost" if "lost" in states else ("void" if states == {"void"} else "won")
     return {"status": status, "odds": round(odds, 2), "picks": settled}
 
@@ -173,7 +174,7 @@ def settle_coupon(coupon: dict, results: dict[str, dict], now: datetime) -> dict
 def format_result_message(day: str, settled: dict[str, dict]) -> str:
     lines = [f"📊 <b>Kupon Sonuçları</b> · {_day_label(day)}"]
     verdict = {"won": "✅ KAZANDI", "lost": "❌ KAYBETTİ", "void": "⚪ İPTAL"}
-    icons = {"won": "✅", "lost": "❌", "void": "⚪"}
+    icons = {"won": "✅", "lost": "❌", "void": "⚪", "pending": "⏳"}
     for kind in ("banko", "surprise"):
         if kind not in settled:
             continue
@@ -183,7 +184,7 @@ def format_result_message(day: str, settled: dict[str, dict]) -> str:
             head += f" · <b>{s['odds']:.2f}</b>"
         lines += ["", head]
         for p in s["picks"]:
-            score = p["score"] or "sonuç yok"
+            score = p["score"] or ("bekleniyor" if p["state"] == "pending" else "sonuç yok")
             lines.append(f"{icons[p['state']]} {_esc(p['home'])} - {_esc(p['away'])} <b>{score}</b> "
                          f"→ {_esc(_label(p['market']))} ({p['odds']:.2f})")
     return "\n".join(lines)
@@ -342,6 +343,21 @@ def post_grok_audits(now: datetime, send) -> list[str]:
     return grok_audit.post_pending(now, send)
 
 
+def saved_and_iddaa_results(day: str) -> dict[str, tuple[int, int]]:
+    """Canlı skor akışının kalıcılaştırdığı kesin skorlar (verified_scores) + iddaa sonuç servisi.
+    iddaa akışı birkaç gün sonra eski maçları düşürdüğü için kayıtlı skor yedek olarak kullanılır."""
+    with session() as conn:
+        saved = json.loads(get_meta(conn, "verified_scores:" + day) or "{}")
+    scores = {key.removeprefix("iddaa:"): (row["home_goals"], row["away_goals"]) for key, row in saved.items()
+              if row.get("state") == "post" and row.get("home_goals") is not None and row.get("away_goals") is not None}
+    try:
+        scores.update(iddaa.fetch_results(day))
+    except Exception:
+        if not scores:
+            raise
+    return scores
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Telegram kupon/sonuç paylaşımı")
     parser.add_argument("--dry-run", action="store_true", help="Mesajı gönderme/kaydetme, ekrana yaz")
@@ -383,7 +399,7 @@ def main(argv=None) -> int:
     lines, failed = [], False
     steps = [lambda: [post_daily_coupons(now, send, force=args.force,
                                          day=date.fromisoformat(args.day) if args.day else None)],
-             lambda: post_results(now, send, fetch_results=iddaa.fetch_results),
+             lambda: post_results(now, send, fetch_results=saved_and_iddaa_results),
              lambda: post_grok_audits(now, send)]
     for step in steps:  # biri hata verse de diğeri denenir
         try:

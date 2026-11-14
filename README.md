@@ -178,8 +178,9 @@ Parametreler `app/config.py` içindeki `MODEL` sözlüğündedir.
 ## Telegram kanalı (günlük kupon + sonuç)
 
 `app/telegram_bot.py` Telegram Bot API'sini (kütüphanesiz, HTTP) kullanır. Türkiye saatiyle 09:00-15:00
-arasında o günün **banko + sürpriz** kuponunu kanala gönderir; kuponun tüm maçları bitince sonucu
-(✅/❌, skorlar) kupon mesajına yanıt olarak yazar; kaydedilmiş Grok denetimi varsa "🧠 Grok denetimi" mesajını da
+arasında o günün **banko + sürpriz** kuponunu kanala gönderir; kuponların tüm maçları bitince (ya da her
+kupon kesinleşince: bir bacağı kaybeden kupon kalan maçları beklemez) sonucu (✅/❌/⏳, skorlar) kupon mesajına
+yanıt olarak yazar; skorlar ESPN, iddaa sonuç servisi ve canlı akışın kaydettiği `verified_scores` yedeğinden gelir; kaydedilmiş Grok denetimi varsa "🧠 Grok denetimi" mesajını da
 gönderir. Aynı gün/tür ikinci kez gönderilmez: `telegram_posts`
 tablosundaki (gün, tür) kaydı önce alınır, gönderim başarısız olursa bırakılır ve sonraki çalıştırmada
 tekrar denenir. `TELEGRAM_BOT_TOKEN` veya `TELEGRAM_CHAT_ID` tanımlı değilse hiçbir şey yapmadan çıkar.
@@ -196,7 +197,7 @@ Kurulum (bir kez):
    (yerel SQLite'ta tablo otomatik oluşur).
 7. İlk deneme: Actions → "Telegram kupon" → *Run workflow* (`force` işaretli).
 
-Workflow (`.github/workflows/telegram.yml`) her saatin 20. dakikasında çalışır; zamanlanmış workflow'lar
+Workflow (`.github/workflows/telegram.yml`) her saatin 38. dakikasında çalışır (GitHub zamanlanmış çalıştırmaları atlayabildiği için saatlik); zamanlanmış workflow'lar
 yalnızca varsayılan dalda (main) tetiklenir. Yerelde: `python -m app.telegram_bot --dry-run` mesajı göndermeden
 ekrana yazar; `--force` sabah penceresini, `--day YYYY-MM-DD` günü değiştirir.
 ## PWA (ana ekrana ekle)

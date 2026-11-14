@@ -109,6 +109,14 @@ class MessageTest(unittest.TestCase):
         self.assertEqual((s["status"], s["odds"]), ("won", 1.5))
         self.assertEqual([p["state"] for p in s["picks"]], ["won", "void"])
 
+    def test_lost_leg_settles_coupon_without_waiting_for_unfinished_legs(self):
+        c = coupon("surprise", [pick(1, "Ü2.5"), pick(2, "1")])
+        results = {"1": {"completed": 1, "home_goals": 1, "away_goals": 0}}
+        s = tg.settle_coupon(c, results, datetime(2026, 10, 17, 18, 0, tzinfo=UTC))
+        self.assertEqual(s["status"], "lost")
+        self.assertEqual([p["state"] for p in s["picks"]], ["lost", "pending"])
+        self.assertIn("⏳ H2 - A&amp;2 <b>bekleniyor</b>", tg.format_result_message("2026-10-17", {"surprise": s}))
+
     def test_settle_lost_and_message(self):
         c = coupon("surprise", [pick(1, "X"), pick(2, "2")])
         results = {"1": {"completed": 1, "home_goals": 1, "away_goals": 1},
@@ -252,6 +260,17 @@ class ResultsTest(DbTestCase):
         late = datetime(2026, 10, 17, 18, 0, tzinfo=UTC)
         self.assertEqual(tg.post_results(late, self.send), ["sonuç 2026-10-17: maçlar bitmedi"])
         self.assertEqual(self.sent, [])
+
+
+    def test_saved_live_scores_back_up_iddaa_results_feed(self):
+        with db.session() as conn:
+            db.set_meta(conn, "verified_scores:2026-10-17", json.dumps(
+                {"iddaa:2": {"state": "post", "home_goals": 0, "away_goals": 2},
+                 "iddaa:3": {"state": "in", "home_goals": 1, "away_goals": 0}}))
+        with patch.object(tg.iddaa, "fetch_results", side_effect=RuntimeError("akış yok")):
+            self.assertEqual(tg.saved_and_iddaa_results("2026-10-17"), {"2": (0, 2)})
+        with patch.object(tg.iddaa, "fetch_results", return_value={"2": (1, 2), "4": (0, 0)}):
+            self.assertEqual(tg.saved_and_iddaa_results("2026-10-17"), {"2": (1, 2), "4": (0, 0)})
 
 
 class TestModeTest(DbTestCase):
