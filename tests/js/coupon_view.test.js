@@ -212,3 +212,13 @@ test("simple card shows match and what to play; grok replacement becomes the mai
   assert.equal(CouponView.mainCoupon(data, "surprise"), null);
   assert.match(CouponView.simpleCard(grok, "banko"), /Grok değişimi/);
 });
+
+test("odds movement badge and played control", () => {
+  assert.match(CouponView.oddsMove(pick({ odds_move: -0.08, odds_open: 1.95 })), /Oran düşüyor %8/);
+  assert.match(CouponView.oddsMove(pick({ odds_move: 0.06 })), /Oran yükseliyor %6/);
+  assert.equal(CouponView.oddsMove(pick({ odds_move: -0.02 })), "");
+  const html = CouponView.simpleCard(coupon("banko", { stake_plan: { percent: 1.5 } }), "banko", { kind: "main:banko", index: 0 });
+  assert.match(html, /data-played-coupon/);
+  assert.match(html, /data-stake-pct="1.5"/);
+  assert.doesNotMatch(CouponView.simpleCard(coupon("banko"), "banko"), /data-played-coupon/);
+});

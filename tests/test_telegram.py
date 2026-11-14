@@ -313,6 +313,40 @@ class ResultsTest(DbTestCase):
             self.assertEqual(tg.saved_and_iddaa_results("2026-10-17"), {"2": (1, 2), "4": (0, 0)})
 
 
+class PrematchTest(DbTestCase):
+    def setUp(self):
+        super().setUp()
+        tg.post_daily_coupons(datetime(2026, 10, 17, 6, 30, tzinfo=UTC), self.send, build=self.built())
+        self.sent.clear()
+
+    def test_one_reply_per_leg_with_research_and_odds_move(self):
+        now = datetime(2026, 10, 17, 13, 0, tzinfo=UTC)  # maçlara 60 dk
+        data = {"banko": {"picks": [{"id": "1", "market": "1", "odds_move": -0.08, "research": {
+            "lineup_status": "official", "findings": [{"status": "confirmed", "category": "injury",
+                                                       "statement": "Kaleci sakat"}]}}]}}
+        calls = []
+        fetch = lambda day: calls.append(day) or data
+        self.assertEqual(len(tg.post_prematch_checks(now, self.send, fetch=fetch)), 2)
+        self.assertEqual(tg.post_prematch_checks(now, self.send, fetch=fetch), [])  # bacak başına bir kez
+        self.assertEqual(calls, ["2026-10-17"])
+        first, second = self.sent[0][0], self.sent[1][0]
+        self.assertEqual(self.sent[0][1], "101")
+        self.assertIn("resmî kadro", first)
+        self.assertIn("Kaleci sakat", first)
+        self.assertIn("%8 düştü", first)
+        self.assertIn("Araştırma notu yok", second)
+
+    def test_outside_window_and_fetch_errors(self):
+        early = datetime(2026, 10, 17, 10, 0, tzinfo=UTC)
+        self.assertEqual(tg.post_prematch_checks(early, self.send, fetch=lambda d: {}), [])
+
+        def boom(day):
+            raise OSError("ağ yok")
+        now = datetime(2026, 10, 17, 13, 20, tzinfo=UTC)
+        self.assertEqual(len(tg.post_prematch_checks(now, self.send, fetch=boom)), 2)
+        self.assertIn("Araştırma notu yok", self.sent[0][0])
+
+
 class TestModeTest(DbTestCase):
     def test_test_day_sends_test_header_without_idempotency_record(self):
         calls = []

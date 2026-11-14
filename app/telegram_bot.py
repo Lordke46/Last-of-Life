@@ -32,6 +32,10 @@ MORNING_START_HOUR = 9   # Türkiye saati: kupon bu saatten önce gönderilmez
 MORNING_END_HOUR = 15    # ... ve bu saatten sonra gönderilmez (başlamış maçlarla boş kalmasın)
 STALE_CLAIM_MINUTES = 30  # çöken çalıştırmanın bıraktığı 'sending' kaydı bu süreden sonra yeniden alınır
 RESULT_LOOKBACK_DAYS = VOID_AFTER_DAYS + 2
+# Saatlik çalıştırma (dakika 38) her bacağı bir kez yakalasın diye pencere 60 dk'dan geniş.
+PREMATCH_FROM, PREMATCH_TO = timedelta(minutes=30), timedelta(minutes=100)
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "https://iddia-oran.vercel.app").rstrip("/")
+LINEUP_TEXT = {"official": "resmî kadro açıklandı", "predicted": "yalnız tahmini kadro var"}
 
 MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz", "Ağustos", "Eylül", "Ekim",
           "Kasım", "Aralık"]
@@ -201,6 +205,32 @@ def format_leg_message(coupon_type: str, leg: dict, coupon_lost: bool) -> str:
     if coupon_lost:
         text += "\n<i>Bu kupon kaybetti.</i>"
     return text
+
+
+def format_prematch_message(coupon_type: str, leg: dict, info: dict | None) -> str:
+    """Maçtan ~1 saat önce: kadro/araştırma durumu, Grok kararı ve oran hareketi (olasılık değişmez)."""
+    info = info or {}
+    lines = [f"⏰ {_kickoff_tr(leg['kickoff'])} {_esc(leg['home'])} – {_esc(leg['away'])} → "
+             f"<b>{_esc(_label(leg['market']))}</b> ({leg['odds']:.2f}) · {COUPON_TITLES.get(coupon_type, coupon_type)}"]
+    note = info.get("research") if isinstance(info.get("research"), dict) else None
+    if info.get("grok_verdict") == "veto":
+        lines.append(f"🛑 Grok veto: {_esc(info.get('grok_reason') or 'gerekçe yok')}")
+    elif info.get("grok_verdict") == "caution":
+        lines.append(f"⚠️ Grok dikkat: {_esc(info.get('grok_reason') or 'gerekçe yok')}")
+    if note:
+        lines.append("Kadro: " + LINEUP_TEXT.get(note.get("lineup_status"), "henüz açıklanmadı"))
+        confirmed = [f for f in note.get("findings") or [] if isinstance(f, dict) and f.get("status") == "confirmed"
+                     and f.get("category") in ("injury", "suspension", "lineup")][:2]
+        lines += [f"• {_esc(f.get('statement'))}" for f in confirmed]
+        if not confirmed:
+            lines.append("Doğrulanmış sakatlık/ceza bulgusu yok.")
+    else:
+        lines.append("ℹ️ Araştırma notu yok; kadroyu maç öncesi kendin kontrol et.")
+    move = info.get("odds_move")
+    if isinstance(move, (int, float)) and abs(move) >= 0.05:
+        lines.append(f"📉 Oran açılıştan beri %{-move * 100:.0f} düştü (piyasa aynı yönde)." if move < 0 else
+                     f"📈 Oran açılıştan beri %{move * 100:.0f} yükseldi (piyasa ters yönde, dikkat).")
+    return "\n".join(lines)
 
 
 def format_weekly_message(start: date, end: date, summary: dict[str, dict]) -> str:
@@ -403,6 +433,54 @@ def _post_leg_updates(day, coupons, results, now, send, reply_to) -> list[str]:
     return out
 
 
+def fetch_public_coupons(day: str) -> dict:
+    """Web'in gösterdiği kupon yanıtı (araştırma notu, Grok kararı, oran hareketi dahil)."""
+    with urllib.request.urlopen(f"{PUBLIC_BASE_URL}/api/coupons?day={day}", timeout=20) as r:  # noqa: S310
+        return json.loads(r.read().decode())
+
+
+def _pick_details(data: dict) -> dict[tuple[str, str], dict]:
+    out = {}
+    for key, value in (data or {}).items():
+        for c in value if isinstance(value, list) else [value]:
+            if isinstance(c, dict) and isinstance(c.get("picks"), list):
+                for p in c["picks"]:
+                    if isinstance(p, dict):
+                        merged = out.setdefault((str(p.get("id")), p.get("market")), {})
+                        merged.update({k: v for k, v in p.items() if v is not None})
+    return out
+
+
+def post_prematch_checks(now: datetime, send, fetch=fetch_public_coupons) -> list[str]:
+    """Gönderilmiş kuponun başlamasına 30–100 dk kalan her bacağı için bir kez kadro/araştırma notu yazar."""
+    since = (now.astimezone(TZ).date() - timedelta(days=1)).isoformat()
+    with session() as conn:
+        rows = conn.execute("SELECT day, payload, message_id FROM telegram_posts WHERE kind='coupon' "
+                            "AND status='sent' AND day >= ? ORDER BY day", (since,)).fetchall()
+        done = {(r["day"], r["kind"]) for r in conn.execute(
+            "SELECT day, kind FROM telegram_posts WHERE day >= ? AND kind LIKE 'pre:%'", (since,))}
+    out = []
+    for row in rows:
+        details = None
+        for c in json.loads(row["payload"] or "[]"):
+            for leg in c.get("picks") or []:
+                kind = f"pre:{c['type']}:{leg['id']}"
+                start = datetime.fromisoformat(leg["kickoff"].replace("Z", "+00:00"))
+                if (row["day"], kind) in done or not PREMATCH_FROM <= start - now <= PREMATCH_TO:
+                    continue
+                if details is None:
+                    try:
+                        details = _pick_details(fetch(row["day"]))
+                    except Exception as exc:  # noqa: BLE001 - not alınamasa da hatırlatma gider
+                        print(f"Maç öncesi ayrıntı alınamadı: {type(exc).__name__}", flush=True)
+                        details = {}
+                info = details.get((str(leg["id"]), leg["market"]))
+                if _post_once(row["day"], kind, now, None, format_prematch_message(c["type"], leg, info),
+                              send, reply_to=row["message_id"]):
+                    out.append(f"maç öncesi {row['day']}: {leg['home']} - {leg['away']}")
+    return out
+
+
 def post_weekly_summary(now: datetime, send) -> str:
     """Pazartesi 10:00 TSİ'den sonra geçen haftanın (Pzt–Paz) kupon özetini bir kez gönderir."""
     from .model import coupon_history
@@ -487,6 +565,7 @@ def main(argv=None) -> int:
     steps = [lambda: [post_daily_coupons(now, send, force=args.force,
                                          day=date.fromisoformat(args.day) if args.day else None)],
              lambda: post_results(now, send, fetch_results=saved_and_iddaa_results),
+             lambda: post_prematch_checks(now, send),
              lambda: post_grok_audits(now, send),
              lambda: [post_weekly_summary(now, send)]]
     for step in steps:  # biri hata verse de diğeri denenir

@@ -27,6 +27,10 @@ STAKE_MIN_PCT, STAKE_MAX_PCT = 0.5, 3.0  # kasanın yüzdesi
 STAKE_RECENT_DAYS = 7
 # Grok veto'su sonrası geçilen alternatifler; yayımlanan kupondan ayrı ölçülür (matematik ve yorum izi ayrı kalır).
 GROK_KINDS = tuple(f"{k}_grok" for k in KINDS)
+# Alternatif kuponlardaki seçimler: yayımlanmaz, yalnız kapanış oranı (CLV) ve kalibrasyon ölçümü için izlenir.
+TRACKED_KIND = "tracked"
+CALIBRATION_BINS = (0.0, 0.4, 0.5, 0.6, 0.7, 0.8, 1.01)
+ODDS_MOVE_SIGNAL = 0.05  # açılıştan bu kadar (±%5) oynayan oran arayüzde işaretlenir
 
 
 def _now() -> datetime:
@@ -81,6 +85,74 @@ def freeze(conn, coupons: dict, kinds: tuple[str, ...] = KINDS) -> list[str]:
         set_meta(conn, f"coupon_metadata:{coupons['date']}:{kind}", json.dumps(metadata))
         saved.append(kind)
     return saved
+
+
+def _started(pick: dict, now: datetime) -> bool:
+    try:
+        return datetime.fromisoformat(str(pick["kickoff"]).replace("Z", "+00:00")) <= now
+    except (KeyError, TypeError, ValueError):
+        return True
+
+
+def track_alternatives(conn, coupons: dict, now: datetime | None = None) -> int:
+    """Kupon ve alternatiflerindeki başlamamış seçimleri `tracked` türüyle kaydeder (maç başına ilk pazar).
+    saved_coupons satırı açılmaz: geçmiş/kâr listesine girmez, ama settle() sonuç ve kapanış oranı yazar;
+    böylece CLV elemesi ve kalibrasyon raporu yalnız yayımlanan 2 kupondan çok daha hızlı veri toplar."""
+    day, now = coupons.get("date"), now or _now()
+    if not day:
+        return 0
+    picks = {}
+    for kind in KINDS:
+        for c in [coupons.get(kind) or {}, *(coupons.get(f"{kind}_alternatives") or [])]:
+            for p in c.get("picks") or []:
+                if p.get("id") and p.get("market") and p.get("odds") and not _started(p, now):
+                    picks.setdefault(str(p["id"]), p)
+    added = {}
+    for mid, p in picks.items():
+        cur = conn.execute(
+            "INSERT INTO saved_coupon_picks(day, kind, match_id, league, league_name, kickoff, home, away, "
+            "market, odds, odds_source, probability, status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?, 'pending') "
+            "ON CONFLICT(day, kind, match_id) DO NOTHING",
+            (day, TRACKED_KIND, mid, p["league"], p.get("league_name"), p["kickoff"], p["home"], p["away"],
+             p["market"], p["odds"], p.get("odds_source"), p["p"]))
+        if cur.rowcount == 1:
+            added[json.dumps([mid, p["market"]])] = {"iddaa_event_id": p.get("iddaa_event_id") or (
+                p["id"] if p.get("small_league") else None)}
+    if added:
+        key = f"coupon_metadata:{day}:{TRACKED_KIND}"
+        try:
+            metadata = json.loads(get_meta(conn, key, "{}") or "{}")
+        except (TypeError, ValueError):
+            metadata = {}
+        metadata.setdefault("picks", {}).update({k: v for k, v in added.items() if v["iddaa_event_id"]})
+        set_meta(conn, key, json.dumps(metadata))
+    return len(added)
+
+
+def odds_moves(conn, coupons: dict) -> dict:
+    """Kupon/alternatif seçimlerine açılış oranı ve açılıştan bu yana hareketi (odds_move, kesir) ekler."""
+    from ..odds_history import event_moves
+    lists = [k for k in coupons if k in KINDS or k.startswith("current_") or k.endswith("_alternatives")]
+    event = lambda p: str(p.get("iddaa_event_id") or p.get("id") or "")
+    pairs = {(event(p), p["market"]) for k in lists
+             for c in (coupons[k] if isinstance(coupons[k], list) else [coupons[k]]) if isinstance(c, dict)
+             for p in c.get("picks") or [] if p.get("market")}
+    moves = event_moves(conn, pairs)
+    if not moves:
+        return coupons
+
+    def mark(c):
+        if not isinstance(c, dict) or not c.get("picks"):
+            return c
+        picks = []
+        for p in c["picks"]:
+            m = moves.get((event(p), p.get("market")))
+            picks.append({**p, "odds_open": m["open"], "odds_current": m["current"],
+                          "odds_move": round(m["current"] / m["open"] - 1, 4)} if m else p)
+        return {**c, "picks": picks}
+    for k in lists:
+        coupons[k] = [mark(c) for c in coupons[k]] if isinstance(coupons[k], list) else mark(coupons[k])
+    return coupons
 
 
 def freeze_today() -> list[str]:
@@ -169,6 +241,10 @@ def daily_coupons(target, build=build_coupons) -> dict:
     with session() as conn:
         if target == _now().astimezone(TZ).date():
             freeze(conn, built)
+            try:
+                track_alternatives(conn, built)
+            except Exception:  # noqa: BLE001 - izleme kaydı kupon yanıtını bozmaz
+                log.warning("alternatif seçimler izlenemedi", exc_info=True)
         for kind in KINDS:
             published = load_saved(conn, target.isoformat(), kind)
             if not published:
@@ -183,6 +259,10 @@ def daily_coupons(target, build=build_coupons) -> dict:
         except Exception:  # noqa: BLE001 - stake önerisi kuponu engellememeli
             log.warning("stake geçmişi okunamadı", exc_info=True)
             recent = {}
+        try:
+            odds_moves(conn, built)
+        except Exception:  # noqa: BLE001 - oran hareketi yalnız bilgi notu
+            log.warning("oran hareketi okunamadı", exc_info=True)
     for kind in KINDS:
         for key in (kind, f"current_{kind}"):
             if built.get(key) and built[key].get("picks"):
@@ -346,10 +426,31 @@ def _summary(coupons: list[dict]) -> dict:
             "clv_positive": sum(c > 0 for c in clvs)}
 
 
+def calibration(rows) -> list[dict]:
+    """Tahmin isabeti: sonuçlanan seçimler olasılık dilimlerine ayrılır; dilimin ortalama tahmini ile gerçek
+    tutma oranı karşılaştırılır. Aynı gün/maç/pazar (kupon + izlenen) bir kez sayılır."""
+    seen, bins = set(), [[] for _ in CALIBRATION_BINS[:-1]]
+    for r in rows:
+        key = (r["day"], r["match_id"], r["market"])
+        p = r["probability"]
+        if r["status"] not in ("won", "lost") or not isinstance(p, (int, float)) or key in seen:
+            continue
+        seen.add(key)
+        i = next(i for i, hi in enumerate(CALIBRATION_BINS[1:]) if p < hi or hi == CALIBRATION_BINS[-1])
+        bins[i].append((p, r["status"] == "won"))
+    out = []
+    for lo, hi, items in zip(CALIBRATION_BINS, CALIBRATION_BINS[1:], bins):
+        label = f"%{lo * 100:.0f}+" if hi > 1 else f"%{lo * 100:.0f}–{hi * 100:.0f}"
+        out.append({"range": label, "n": len(items),
+                    "predicted": round(sum(p for p, _ in items) / len(items), 4) if items else None,
+                    "actual": round(sum(w for _, w in items) / len(items), 4) if items else None})
+    return out
+
+
 def history(conn, days: int = 60) -> dict:
     """Tüm kayıtlı kuponların özeti ve en yeni `days` günün listesi."""
-    picks_by = {}
-    for r in conn.execute("SELECT * FROM saved_coupon_picks ORDER BY kickoff, match_id"):
+    picks_by, rows = {}, conn.execute("SELECT * FROM saved_coupon_picks ORDER BY kickoff, match_id").fetchall()
+    for r in rows:
         pick = {k: r[k] for k in ("match_id", "league", "league_name", "kickoff", "home", "away", "market", "odds",
                                   "odds_source", "probability", "status", "home_goals", "away_goals", "closing_odds")}
         pick["clv"] = pick_clv(pick)
@@ -375,4 +476,5 @@ def history(conn, days: int = 60) -> dict:
     day_list.sort(key=lambda d: d["date"], reverse=True)
     summary = {kind: _summary([c for c in coupons if c["kind"] == kind]) for kind in (*KINDS, *GROK_KINDS)}
     summary["total"] = _summary([c for c in coupons if c["kind"] in KINDS])
-    return {"stake": STAKE, "summary": summary, "days": day_list[:days], "total_days": len(day_list)}
+    return {"stake": STAKE, "summary": summary, "days": day_list[:days], "total_days": len(day_list),
+            "calibration": calibration(rows)}
