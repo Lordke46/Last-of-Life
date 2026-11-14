@@ -133,5 +133,17 @@ class StaleOddsTests(unittest.TestCase):
         self.assertEqual(coupons._choices(pred, {"1": 1.7}), [])
 
 
+    def test_only_recent_shared_cache_quotes_count_as_current(self):
+        from app import quote_provenance as qp
+        now = datetime.now(timezone.utc)
+        quote = {"cache_status": "shared_cache", "cache_age_seconds": "1",
+                 "quote_observed_at": now.isoformat(), "odd": 1.7}
+        pred = {"iddaa_odds": {"1": 1.7}, "quote_provenance": {"last_fetch_status": "success", "quotes": {"1": quote}}}
+        self.assertTrue(qp.fresh(pred, now=now))
+        quote["cache_age_seconds"] = "900"
+        self.assertFalse(qp.fresh(pred, now=now))
+        quote["cache_age_seconds"] = None
+        self.assertFalse(qp.fresh(pred, now=now))
+
 if __name__ == "__main__":
     unittest.main()

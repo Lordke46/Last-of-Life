@@ -48,3 +48,7 @@ CREATE TABLE IF NOT EXISTS prediction_snapshots (
 CREATE INDEX IF NOT EXISTS ix_prediction_snapshots_league ON prediction_snapshots(league, captured_at);
 
 ALTER TABLE public.prediction_snapshots ENABLE ROW LEVEL SECURITY;
+
+-- İzlenen alternatif seçimler (kind='tracked') saved_coupons satırı açmadan yazılır; FK bu kaydı
+-- reddedip /api/coupons işlemini bozuyordu. SQLite şemasında da bu FK yoktur.
+ALTER TABLE public.saved_coupon_picks DROP CONSTRAINT IF EXISTS saved_coupon_picks_day_kind_fkey;

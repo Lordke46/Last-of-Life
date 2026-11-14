@@ -5,6 +5,19 @@ from .db import get_meta, set_meta
 
 KEY = 'iddaa_quote_provenance'
 MAX_AGE = timedelta(hours=2)
+SHARED_CACHE_MAX_SECONDS = 300
+
+
+def trusted(quote):
+    """Ağdan gelen ya da yaşı birkaç dakikayı geçmeyen CDN yanıtı güncel fiyat kanıtıdır."""
+    status = quote.get('cache_status')
+    if status == 'network_no_cache_evidence':
+        return True
+    try:
+        age = int(quote.get('cache_age_seconds'))
+    except (TypeError, ValueError):
+        return False
+    return status == 'shared_cache' and 0 <= age <= SHARED_CACHE_MAX_SECONDS
 
 
 def timestamp(value):
@@ -59,7 +72,7 @@ def save(conn, events, at, previous):
             quotes[market] = {**value,
                 'identity_first_observed_at': old.get('identity_first_observed_at') if same else value.get('quote_observed_at'),
                 'last_observed_change_at': old.get('last_observed_change_at') if same and old.get('odd') == value['odd'] else value.get('quote_observed_at')}
-        verified = bool(quotes) and all(v.get('cache_status') == 'network_no_cache_evidence' for v in quotes.values())
+        verified = bool(quotes) and all(trusted(v) for v in quotes.values())
         state['events'][event['id']] = {'quotes':quotes, 'quote_source':'iddaa',
             'quote_status':'observed' if verified else 'cache_or_transport_unverified',
             'provider_price_updated_at':None}
@@ -90,7 +103,7 @@ def fresh(prediction, market=None, now=None):
     for key in keys:
         quote = quotes.get(key, {})
         at = timestamp(quote.get('quote_observed_at'))
-        if (quote.get('cache_status') != 'network_no_cache_evidence' or not at
+        if (not trusted(quote) or not at
                 or not now-MAX_AGE <= at <= now or (kickoff and at>=kickoff)
                 or quote.get('odd') != prediction.get('iddaa_odds', {}).get(key)):
             return False
