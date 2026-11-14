@@ -133,3 +133,38 @@ test('target status distinguishes a candidate from a target-qualified coupon',()
  data.target_met=true;
  assert.match(CouponView.couponGroup(data,'banko','b-good'),/Tercih koşullarını karşıladı; sonuç garantisi değildir/);
  });
+
+test("grok verdicts render as badges with escaped reason and only http(s) sources are linked", () => {
+  const vetoed = pick({ grok_verdict: "veto", grok_reason: "Kaleci <sakat>", grok_sources: ["https://example.com/h"] });
+  const html = CouponView.couponCard(coupon("banko", { publication: "published", picks: [vetoed], grok_vetoed: 1 }), "Banko", "b-good");
+  assert.match(html, /badge b-bad[^>]*>Grok: veto/);
+  assert.match(html, /Kaleci &lt;sakat&gt;/);
+  assert.match(html, /href="https:\/\/example\.com\/h"/);
+  assert.match(html, /Grok veto<\/span> 1 bacak güvenilir kaynakla veto edildi/);
+  assert.match(CouponView.grokBadge({ grok_verdict: "caution", grok_reason: "Rotasyon" }), /b-warn[^>]*>Grok: dikkat/);
+  assert.match(CouponView.grokBadge({ grok_verdict: "keep" }), /b-good[^>]*>Grok: tut/);
+  assert.equal(CouponView.grokBadge({}), "");
+  assert.doesNotMatch(CouponView.grokBadge({ grok_verdict: "veto", grok_sources: ["javascript:alert(1)"] }), /href/);
+});
+
+test("grok audit card summarises verdicts, swaps and renders the replacement coupon", () => {
+  assert.equal(CouponView.grokAuditCard({ grok_audit: null }), "");
+  assert.equal(CouponView.grokAuditCard(null), "");
+  const data = {
+    grok_audit: { received_at: "2026-11-14T06:00:00+00:00", kinds: ["daily", "lineup"], summary: "Özet <x>", vetoes: 1, cautions: 2,
+      swaps: [{ kind: "banko", vetoed: ["Ev A - Dep B"], coupon_id: "2026-11-14:banko_grok:v1" }, { kind: "surprise", vetoed: ["C - D"], coupon_id: null }] },
+    banko_grok: coupon("banko_grok", { publication: "grok", grok_note: "Grok veto'su: Ev A - Dep B" }),
+    surprise_grok: null,
+  };
+  const html = CouponView.grokAuditCard(data);
+  assert.match(html, /Grok denetimi/);
+  assert.match(html, /günlük \+ kadro/);
+  assert.match(html, /Özet &lt;x&gt;/);
+  assert.match(html, /1 veto<\/span> <span class="badge b-warn">2 dikkat/);
+  assert.match(html, /<b>Banko<\/b>: Ev A - Dep B veto edildi → veto'suz alternatif aşağıda/);
+  assert.match(html, /<b>Sürpriz<\/b>: C - D veto edildi; başlamamış, veto'suz alternatif kalmadı/);
+  assert.match(html, /Banko · Grok sonrası alternatif/);
+  assert.match(html, /Grok veto'su sonrası geçilen veto'suz alternatif/);
+  assert.doesNotMatch(html, /Sürpriz · Grok sonrası alternatif/);
+  assert.doesNotMatch(html, /undefined|NaN/);
+});

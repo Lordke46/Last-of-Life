@@ -306,6 +306,12 @@ def post_results(now: datetime, send) -> list[str]:
     return out
 
 
+def post_grok_audits(now: datetime, send) -> list[str]:
+    """Panelden kaydedilmiş ama Telegram'a düşmemiş Grok denetimlerini gönderir (sunucuda sır yoksa buradan çıkar)."""
+    from . import grok_audit
+    return grok_audit.post_pending(now, send)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Telegram kupon/sonuç paylaşımı")
     parser.add_argument("--dry-run", action="store_true", help="Mesajı gönderme/kaydetme, ekrana yaz")
@@ -347,7 +353,8 @@ def main(argv=None) -> int:
     lines, failed = [], False
     steps = [lambda: [post_daily_coupons(now, send, force=args.force,
                                          day=date.fromisoformat(args.day) if args.day else None)],
-             lambda: post_results(now, send)]
+             lambda: post_results(now, send),
+             lambda: post_grok_audits(now, send)]
     for step in steps:  # biri hata verse de diğeri denenir
         try:
             lines += step()

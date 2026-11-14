@@ -28,6 +28,7 @@ from .results_api import router as results_router
 from .bulletin_api import router as bulletin_router
 from .research_api import router as research_router
 from .grok_intelligence_api import router as grok_intelligence_router
+from . import grok_audit
 
 AUTO_UPDATE_HOURS = 6
 UPDATE_PER_MINUTE = 5
@@ -58,6 +59,7 @@ app.include_router(results_router)
 app.include_router(bulletin_router)
 app.include_router(research_router)
 app.include_router(grok_intelligence_router)
+app.include_router(grok_audit.router)  # /api/coupons/brief, /api/coupons/grok-audit
 
 
 def _check_league(league: str):
@@ -339,11 +341,17 @@ def coupons(day: str | None = Query(None, description="YYYY-MM-DD (Türkiye saat
     if target>=datetime.now(TZ).date():
         from .bulletin_refresh import refresh_if_stale
         refresh_if_stale()
-    return ops.cached(("coupons", target), lambda: _coupons(target))
+    # Grok denetimi kaydı önbelleği düşürsün diye sürümü anahtara ekliyoruz.
+    return ops.cached(("coupons", target, grok_audit.version()), lambda: _coupons(target))
 
 
 def _coupons(target):
-    return coupon_history.daily_coupons(target, build=build_coupons)
+    built = coupon_history.daily_coupons(target, build=build_coupons)
+    try:
+        return grok_audit.decorate(built)
+    except Exception as exc:  # noqa: BLE001 — denetim notu kupon yanıtını asla bozmaz
+        print(f"Grok denetimi uygulanamadı: {type(exc).__name__}: {exc}", flush=True)
+        return built
 
 
 @app.post("/api/update", dependencies=[Depends(auth.require_admin)])

@@ -17,6 +17,8 @@ from .settlement import outcome, selection_state, SUPPORTED_MARKETS
 
 STAKE = 100.0  # simülasyon: her gün, her kupona yatırılan TL
 KINDS = ("banko", "surprise")
+# Grok veto'su sonrası geçilen alternatifler; yayımlanan kupondan ayrı ölçülür (matematik ve yorum izi ayrı kalır).
+GROK_KINDS = tuple(f"{k}_grok" for k in KINDS)
 
 
 def _now() -> datetime:
@@ -40,11 +42,11 @@ def coupon_status(pick_statuses: list[str]) -> str:
 
 
 # --- Dondurma ----------------------------------------------------------------------
-def freeze(conn, coupons: dict) -> list[str]:
+def freeze(conn, coupons: dict, kinds: tuple[str, ...] = KINDS) -> list[str]:
     """`build_coupons` çıktısındaki boş olmayan kuponları, daha önce kaydedilmemişse yazar.
     Yarışta (iki istek aynı anda) birincil anahtar tek kaydı garanti eder. Yeni kaydedilen türleri döner."""
     saved, now = [], _now().isoformat(timespec="seconds")
-    for kind in KINDS:
+    for kind in kinds:
         c = coupons.get(kind) or {}
         picks = c.get("picks") or []
         if not picks:
@@ -64,7 +66,8 @@ def freeze(conn, coupons: dict) -> list[str]:
         # Seçimle birlikte kanıt durumunu da dondur; sonraki kalibrasyon geçmişi değiştirmesin.
         fields = ("model_probability", "market_probability", "raw_p", "calibration_n",
                   "calibration_applied", "data_n", "probability_source", "value", "news_effect")
-        metadata = {k: c[k] for k in ("selection_policy", "calibration_status", "calibration_note", "stake_note") if k in c}
+        metadata = {k: c[k] for k in ("selection_policy", "calibration_status", "calibration_note", "stake_note",
+                                      "target_met", "selection_tier", "grok_replaces", "grok_note") if k in c}
         metadata["picks"] = {json.dumps([str(p["id"]), p["market"]]):
                              {k: p[k] for k in fields if k in p} for p in picks}
         set_meta(conn, f"coupon_metadata:{coupons['date']}:{kind}", json.dumps(metadata))
@@ -93,6 +96,34 @@ def freeze_if_today(coupons: dict) -> list[str]:
         return []
 
 
+def load_saved(conn, day: str, kind: str) -> dict | None:
+    """Dondurulmuş (gün, tür) kuponu `build_coupons` biçiminde döner; kayıt yoksa None."""
+    row = conn.execute("SELECT * FROM saved_coupons WHERE day=? AND kind=?", (day, kind)).fetchone()
+    if not row:
+        return None
+    try:
+        metadata = json.loads(get_meta(conn, f"coupon_metadata:{day}:{kind}", "{}"))
+    except (TypeError, ValueError):
+        metadata = {}
+    if not isinstance(metadata, dict) or not isinstance(metadata.get("picks", {}), dict):
+        metadata = {}
+    picks = []
+    for p in conn.execute("SELECT * FROM saved_coupon_picks WHERE day=? AND kind=? ORDER BY kickoff, match_id",
+                          (day, kind)):
+        picks.append({"id": p["match_id"], "league": p["league"], "league_name": p["league_name"],
+                      "home": p["home"], "away": p["away"], "kickoff": p["kickoff"],
+                      "market": p["market"], "odds": p["odds"], "odds_source": p["odds_source"],
+                      "p": p["probability"],
+                      **metadata.get("picks", {}).get(json.dumps([str(p["match_id"]), p["market"]]), {})})
+    return {"type": kind, "picks": picks, "total_odds": row["total_odds"],
+            "total_probability": row["total_probability"], "odds_source": row["odds_source"],
+            "iddaa_picks": sum(p["odds_source"] == "iddaa" for p in picks),
+            "coupon_id": f"{day}:{kind}:v1", "publication": "published",
+            "published_at": row["created_at"], "stake_note": "Yayımlandığı andaki seçim ve oranlar.",
+            **{k: metadata[k] for k in ("selection_policy", "calibration_status", "calibration_note", "stake_note",
+                                        "target_met", "selection_tier", "grok_replaces", "grok_note") if k in metadata}}
+
+
 def daily_coupons(target, build=build_coupons) -> dict:
     """Web ve Telegram aynı (gün, tür) kaydını yayımlar; alternatifler canlı kalır."""
     from ..db import session
@@ -105,30 +136,9 @@ def daily_coupons(target, build=build_coupons) -> dict:
         if target == _now().astimezone(TZ).date():
             freeze(conn, built)
         for kind in KINDS:
-            row = conn.execute("SELECT * FROM saved_coupons WHERE day=? AND kind=?",
-                               (target.isoformat(), kind)).fetchone()
-            if not row:
+            published = load_saved(conn, target.isoformat(), kind)
+            if not published:
                 continue
-            try:
-                metadata = json.loads(get_meta(conn, f"coupon_metadata:{target.isoformat()}:{kind}", "{}"))
-            except (TypeError, ValueError):
-                metadata = {}
-            if not isinstance(metadata, dict) or not isinstance(metadata.get("picks", {}), dict):
-                metadata = {}
-            picks = []
-            for p in conn.execute("SELECT * FROM saved_coupon_picks WHERE day=? AND kind=? ORDER BY kickoff, match_id",
-                                  (target.isoformat(), kind)):
-                picks.append({"id": p["match_id"], "league": p["league"], "league_name": p["league_name"],
-                              "home": p["home"], "away": p["away"], "kickoff": p["kickoff"],
-                              "market": p["market"], "odds": p["odds"], "odds_source": p["odds_source"],
-                              "p": p["probability"],
-                              **metadata.get("picks", {}).get(json.dumps([str(p["match_id"]), p["market"]]), {})})
-            published = {"type": kind, "picks": picks, "total_odds": row["total_odds"],
-                         "total_probability": row["total_probability"], "odds_source": row["odds_source"],
-                         "iddaa_picks": sum(p["odds_source"] == "iddaa" for p in picks),
-                         "coupon_id": f"{target.isoformat()}:{kind}:v1", "publication": "published",
-                         "published_at": row["created_at"], "stake_note": "Yayımlandığı andaki seçim ve oranlar.",
-                         **{k: metadata[k] for k in ("selection_policy", "calibration_status", "calibration_note", "stake_note") if k in metadata}}
             signature = lambda c: frozenset((str(p["id"]), p["market"]) for p in c.get("picks", []))
             live = [{**c, "publication": "live"} for c in built.get(f"{kind}_alternatives", [])
                     if signature(c) != signature(published)]
@@ -226,10 +236,11 @@ def history(conn, days: int = 60) -> dict:
     by_day = {}
     for c in coupons:
         by_day.setdefault(c["day"], {"date": c["day"]})[c["kind"]] = c
-    day_list = [{"banko": None, "surprise": None, **d,
+    # Günlük kâr ve "Toplam" yalnız yayımlanan Banko/Sürpriz'i sayar; Grok türleri ayrı satırlarda ölçülür.
+    day_list = [{**{k: None for k in (*KINDS, *GROK_KINDS)}, **d,
                  "profit": round(sum(c["profit"] or 0 for k, c in d.items() if k in KINDS), 2)}
                 for d in by_day.values()]
     day_list.sort(key=lambda d: d["date"], reverse=True)
-    summary = {kind: _summary([c for c in coupons if c["kind"] == kind]) for kind in KINDS}
-    summary["total"] = _summary(coupons)
+    summary = {kind: _summary([c for c in coupons if c["kind"] == kind]) for kind in (*KINDS, *GROK_KINDS)}
+    summary["total"] = _summary([c for c in coupons if c["kind"] in KINDS])
     return {"stake": STAKE, "summary": summary, "days": day_list[:days], "total_days": len(day_list)}
