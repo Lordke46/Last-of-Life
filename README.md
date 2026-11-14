@@ -126,6 +126,10 @@ veto'lu bacak varsa motor aynı türün veto'suz, henüz başlamamış ilk alter
 `surprise_grok` türüyle ayrı ölçer. Brief `GET /api/coupons/brief?kind=daily|lineup|weekly` (herkese açık),
 karar yönetici panelinden `POST /api/coupons/grok-audit` ile girilir. Kurulum ve şema: `docs/GROK_KUPON_DENETIMI.md`.
 
+**Grok Bot araştırma pilotu** (isteğe bağlı, Grok Bot aboneliği yeterli): günlük Actions köprüsü günün trio
+adaylarını `ai_research` kuyruğuna yazar ve Grok Bot rutinini webhook'la uyandırır; Bot kendi bulut bilgisayarından
+Research API ile claim → araştırma → rapor döngüsünü insan dokunmadan tamamlar. Kurulum: `docs/GROK_BOT_PILOT.md`.
+
 **Kupon Geçmişi** sekmesi: günün Banko ve Sürpriz kuponu (gün + tür başına bir kez, ilk üretildiği haliyle) `saved_coupons` /
 `saved_coupon_picks` tablolarına dondurulur — bugünün kuponu `/api/coupons` ile ilk üretildiğinde veya tam güncellemede
 (cron). Maç sonuçları gelince (hızlı ve tam güncelleme akışında) her seçim ve kupon `Tuttu` / `Yattı` / `Bekliyor` (`İptal`:
@@ -221,6 +225,7 @@ app/model/engine.py    tüm parametreleri birleştiren motor + geriye dönük te
 app/main.py            FastAPI uç noktaları
 app/telegram_bot.py    Telegram kanalına günlük kupon + sonuç paylaşımı
 app/grok_audit.py      Grok kupon denetimi: brief, karar doğrulama, veto → alternatif (docs/GROK_KUPON_DENETIMI.md)
+app/research_auto.py   günlük araştırma kuyruğu köprüsü + Grok Bot webhook tetikleyicisi (docs/GROK_BOT_PILOT.md)
 static/                web arayüzü
 data/iddia.db          yerel SQLite veritabanı (DATABASE_URL yoksa; otomatik oluşur)
 supabase/migrations/   Postgres şeması
