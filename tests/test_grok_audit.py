@@ -80,6 +80,36 @@ class BriefTest(DbCase):
             kinds = [r["kind"] for r in conn.execute("SELECT kind FROM saved_coupons ORDER BY kind")]
         self.assertEqual(kinds, ["banko", "surprise"])
 
+    def test_daily_brief_marks_started_legs_and_uses_next_kickoff_for_lineup_time(self):
+        def early(d):  # banko bacağı 2 saat önce başladı, sürpriz ve alternatifler ileride
+            b = built(d)
+            b["banko"] = coupon("banko", [pick("b0", odds=1.85, p=0.5, hours=-2)])
+            b["banko_alternatives"] = [b["banko"], *b["banko_alternatives"][:2]]
+            return b
+        text = ga.brief(DAY, "daily", now=NOW, build=early)
+        data = json.loads(text.split("VERİ\n", 1)[1])
+        banko = data["kuponlar"][0]
+        self.assertEqual(banko["durum"], "başladı")
+        self.assertEqual(banko["bacaklar"][0]["durum"], "başladı")
+        self.assertNotIn("durum", data["kuponlar"][1])
+        self.assertNotIn("durum", data["kuponlar"][1]["bacaklar"][0])
+        self.assertIn('"durum":"başladı" olan maç/kupon zaten oynanıyor', text)
+        self.assertIn("16:45", text)  # başlamamış ilk maç 15:00 UTC → 18:00 TSİ − 75 dk; 07:00 UTC'deki maç sayılmaz
+        self.assertNotIn("08:45", text)
+        self.assertIn("simdi_tr", text)
+
+    def test_daily_brief_with_everything_started_tells_grok_to_stop(self):
+        def finished(d):
+            b = built(d)
+            for key in ("banko", "surprise"):
+                for c in (b[key], *b[f"{key}_alternatives"]):
+                    for x in c["picks"]:
+                        x["kickoff"] = (NOW - timedelta(hours=1)).isoformat().replace("+00:00", "Z")
+            return b
+        text = ga.brief(DAY, "daily", now=NOW, build=finished)
+        self.assertIn("görevi bitir", text)
+        self.assertNotIn("VERİ", text)
+
     def test_daily_brief_without_coupons_tells_grok_to_stop(self):
         empty = lambda d: {"date": d.isoformat(), "banko": {"picks": []}, "surprise": {"picks": []},
                            "banko_alternatives": [], "surprise_alternatives": []}
