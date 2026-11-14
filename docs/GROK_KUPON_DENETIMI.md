@@ -62,7 +62,9 @@ kontrol karakterleri temizlenir, metinler kırpılır. Metin içindeki talimatla
 > https://iddia-oran.vercel.app/api/coupons/brief?kind=weekly adresini aç ve içindeki talimatı aynen uygula.
 
 Kota: günlük 1 + kadro 0–1 + haftalık 1 ≈ haftada 8–10 prompt. Kupon yoksa brief Grok'a "araştırma yapma"
-der; kadro penceresinde bacak yoksa aynı şekilde. Grok arayüzü URL'yi okuyamazsa yönetici panelindeki
+der; kadro penceresinde bacak yoksa aynı şekilde. Brief alındığında başlamış maçlar (ör. sabah 07:00'deki
+Avustralya maçı) `"durum":"başladı"` ile işaretlenir ve Grok'a bunları araştırmaması söylenir; tüm bacaklar
+başladıysa brief "görevi bitir" der. Önerilen kadro kontrol saati, henüz başlamamış ilk maçtan hesaplanır. Grok arayüzü URL'yi okuyamazsa yönetici panelindeki
 **Brief'i kopyala** düğmesiyle metni Grok sohbetine yapıştırın.
 
 ## Kayıt ve ölçüm

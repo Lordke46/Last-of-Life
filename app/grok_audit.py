@@ -37,6 +37,7 @@ LINEUP_WINDOW = timedelta(minutes=150)
 LINEUP_LEAD = timedelta(minutes=75)
 VERDICT_LABELS = {"keep": "tut", "caution": "dikkat", "veto": "veto"}
 VERDICT_ICONS = {"keep": "✅", "caution": "⚠️", "veto": "⛔"}
+STARTED = "başladı"
 NO_LINEUP_TEXT = ("Şu an kadro kontrolü gerektiren kupon maçı yok (başlamasına 150 dakikadan az kalan "
                   "yayımlanmış bacak bulunmuyor). Araştırma yapma, yanıt üretme; görevi bitir.")
 
@@ -81,11 +82,18 @@ def _url(value) -> str | None:
     return parts.geturl()
 
 
-def _leg(pick: dict) -> dict:
+def _started(pick: dict, now: datetime | None) -> bool:
+    kickoff = _kickoff(pick.get("kickoff"))
+    return bool(now and kickoff and kickoff <= now)
+
+
+def _leg(pick: dict, now: datetime | None = None) -> dict:
     leg = {"match_id": str(pick.get("id")), "lig": pick.get("league_name") or pick.get("league"),
            "ev": pick.get("home"), "dep": pick.get("away"), "baslangic_tr": _tr(pick.get("kickoff")),
            "secim": _label(pick.get("market")), "oran": pick.get("odds"),
            "tahmini_olasilik": _pct(pick.get("p"))}
+    if _started(pick, now):
+        leg["durum"] = STARTED
     for key, label in (("model_probability", "model"), ("market_probability", "piyasa")):
         if _pct(pick.get(key)):
             leg[label] = _pct(pick[key])
@@ -94,13 +102,18 @@ def _leg(pick: dict) -> dict:
     return leg
 
 
-def _coupon_view(coupon: dict, label: str) -> dict | None:
+def _coupon_view(coupon: dict, label: str, now: datetime | None = None) -> dict | None:
     picks = (coupon or {}).get("picks") or []
     if not picks:
         return None
-    return {"tur": label, "kupon_id": coupon.get("coupon_id"), "toplam_oran": coupon.get("total_odds"),
-            "tahmini_olasilik": _pct(coupon.get("total_probability")), "hedef_saglandi": coupon.get("target_met"),
-            "bacaklar": [_leg(p) for p in picks]}
+    view = {"tur": label, "kupon_id": coupon.get("coupon_id"), "toplam_oran": coupon.get("total_odds"),
+            "tahmini_olasilik": _pct(coupon.get("total_probability"))}
+    if isinstance(coupon.get("target_met"), bool):
+        view["hedef_saglandi"] = coupon["target_met"]
+    if all(_started(p, now) for p in picks):
+        view["durum"] = STARTED
+    view["bacaklar"] = [_leg(p, now) for p in picks]
+    return view
 
 
 def _published_and_alternatives(built: dict):
@@ -137,10 +150,11 @@ def lineup_legs(built: dict, now: datetime) -> list[dict]:
     return legs
 
 
-def lineup_check_time(built: dict) -> str | None:
-    """Günlük brief'te önerilen kadro kontrol saati: en erken yayımlanmış bacaktan 75 dk önce."""
-    kickoffs = [_kickoff(p.get("kickoff")) for kind in COUPON_KINDS for p in (built.get(kind) or {}).get("picks") or []]
-    kickoffs = [k for k in kickoffs if k]
+def lineup_check_time(built: dict, now: datetime) -> str | None:
+    """Günlük brief'te önerilen kadro kontrol saati: henüz başlamamış en erken yayımlanmış bacaktan 75 dk önce."""
+    kickoffs = [_kickoff(p.get("kickoff")) for kind in COUPON_KINDS
+                for coupon in (built.get(kind) or {}, built.get(f"{kind}_grok") or {}) for p in coupon.get("picks") or []]
+    kickoffs = [k for k in kickoffs if k and k > now]
     return (min(kickoffs) - LINEUP_LEAD).astimezone(TZ).strftime("%H:%M") if kickoffs else None
 
 
@@ -151,6 +165,7 @@ RULES = """ÇALIŞMA KURALLARI
 - veto yalnız güvenilir kaynakla doğrulanmış, seçimi doğrudan etkileyen bilgi için: erteleme/saha değişikliği, kilit oyuncu kesinleşmiş eksik (seçimle ilgiliyse), ilk 11 sürprizi, olağan dışı hava, ölü maç/rotasyon kanıtı.
 - caution: doğrulanmamış söylenti, kısmi bilgi, motivasyon şüphesi. keep: aksini gösteren bilgi yok.
 - Her maç için en fazla 2 kaynak URL'si; kaynak yoksa boş liste. Erişemediğin bilgiyi "bilinmiyor" diye yaz, uydurma.
+- "durum":"başladı" olan maç/kupon zaten oynanıyor: araştırma yapma, karar yazma.
 - Kısa yaz: gerekçe ≤ 200 karakter, özet ≤ 600 karakter. Yalnız aşağıdaki JSON'u döndür, başka metin ekleme."""
 
 OUTPUT = """YANIT BİÇİMİ (yalnız bu JSON)
@@ -186,15 +201,20 @@ def brief(day: date, kind: str = "daily", now: datetime | None = None, build=Non
             RULES, OUTPUT % (SCHEMA, day_text, "lineup"), "VERİ\n" + _data_block(data)])
     coupons, alternatives = [], []
     for ckind, published, alts in _published_and_alternatives(built):
-        view = _coupon_view(published, ckind)
+        view = _coupon_view(published, ckind, now)
         if view:
             coupons.append(view)
-        alternatives += [v for v in (_coupon_view(c, f"{ckind}_alternatif_{i + 1}") for i, c in enumerate(alts[:2])) if v]
+        alternatives += [v for v in (_coupon_view(c, f"{ckind}_alternatif_{i + 1}", now) for i, c in enumerate(alts[:2])) if v]
     if not coupons:
         return ("Bugün için yayımlanmış kupon yok (oran tazeliği veya bülten koşulları sağlanmadı). "
                 "Araştırma yapma; görevi bitir.")
-    data = {"gun": day_text, "kuponlar": coupons, "alternatifler": alternatives}
-    check = lineup_check_time(built)
+    pending = [l for c in (*coupons, *alternatives) for l in c["bacaklar"] if "durum" not in l]
+    if not pending:
+        return ("Bugünün kupon ve alternatif bacaklarının tümü başladı; denetlenecek maç kalmadı. "
+                "Araştırma yapma; görevi bitir.")
+    data = {"gun": day_text, "simdi_tr": now.astimezone(TZ).strftime("%d.%m %H:%M"),
+            "kuponlar": coupons, "alternatifler": alternatives}
+    check = lineup_check_time(built, now)
     intro = ("Aşağıda bir istatistik motorunun bugün için seçtiği iddaa kuponları var. Motor, iddaa bülten "
              "fiyatından marjı temizleyip (%75 piyasa / %25 takım modeli) toplam-oran tabanının üstünde ortak tutma "
              "olasılığı en yüksek kombinasyonu seçer; haberleri, kadroları ve motivasyonu bilmez. Senin işin bu "
@@ -202,8 +222,11 @@ def brief(day: date, kind: str = "daily", now: datetime | None = None, build=Non
              "maçı), erteleme, hava/saha, ölü maç veya küme/terfi motivasyonu, teknik direktör değişikliği ve küçük "
              "ligde (yalnız piyasa olasılığı olan bacaklar) fiyatın mantıklılığını kontrol et. Alternatif kuponların "
              "bacaklarına da karar ver; veto'lu bir bacak çıkarsa motor otomatik olarak veto'suz alternatife geçer.")
+    if all("durum" in c for c in coupons):
+        intro += ("\nYayımlanan kuponların maçları başladı; yalnız alternatiflerin başlamamış bacaklarını denetle "
+                  "(sonuçlar arayüzde alternatiflerin yanında gösterilir).")
     if check:
-        intro += f"\nKadro kontrolü için en uygun saat (ilk maçtan 75 dk önce, TSİ): {check}."
+        intro += f"\nKadro kontrolü için en uygun saat (başlamamış ilk maçtan 75 dk önce, TSİ): {check}."
     return "\n\n".join([intro, RULES, OUTPUT % (SCHEMA, day_text, "daily"), "VERİ\n" + _data_block(data)])
 
 
