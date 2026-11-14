@@ -120,6 +120,12 @@ Kuponda oran olarak eşleşen **iddaa** oranı kullanılır; o pazarda iddaa ora
 Her satırda ve kupon başlığında hangisinin kullanıldığı yazar. Şartı sağlayan seçim yoksa kupon boş döner.
 API: `/api/coupons?day=YYYY-MM-DD`. Testler: `.venv/bin/python -m unittest discover -s tests -t .`
 
+**Grok denetimi** (isteğe bağlı, abonelik yeterli, API yok): günde tek prompt ile Grok günün kuponlarını haber,
+kadro ve motivasyon açısından denetler; bacak bazında `tut / dikkat / veto` der. Grok olasılık üretmez;
+veto'lu bacak varsa motor aynı türün veto'suz, henüz başlamamış ilk alternatifine geçer ve bunu `banko_grok` /
+`surprise_grok` türüyle ayrı ölçer. Brief `GET /api/coupons/brief?kind=daily|lineup|weekly` (herkese açık),
+karar yönetici panelinden `POST /api/coupons/grok-audit` ile girilir. Kurulum ve şema: `docs/GROK_KUPON_DENETIMI.md`.
+
 **Kupon Geçmişi** sekmesi: günün Banko ve Sürpriz kuponu (gün + tür başına bir kez, ilk üretildiği haliyle) `saved_coupons` /
 `saved_coupon_picks` tablolarına dondurulur — bugünün kuponu `/api/coupons` ile ilk üretildiğinde veya tam güncellemede
 (cron). Maç sonuçları gelince (hızlı ve tam güncelleme akışında) her seçim ve kupon `Tuttu` / `Yattı` / `Bekliyor` (`İptal`:
@@ -154,7 +160,8 @@ Parametreler `app/config.py` içindeki `MODEL` sözlüğündedir.
 
 `app/telegram_bot.py` Telegram Bot API'sini (kütüphanesiz, HTTP) kullanır. Türkiye saatiyle 09:00-15:00
 arasında o günün **banko + sürpriz** kuponunu kanala gönderir; kuponun tüm maçları bitince sonucu
-(✅/❌, skorlar) kupon mesajına yanıt olarak yazar. Aynı gün/tür ikinci kez gönderilmez: `telegram_posts`
+(✅/❌, skorlar) kupon mesajına yanıt olarak yazar; kaydedilmiş Grok denetimi varsa "🧠 Grok denetimi" mesajını da
+gönderir. Aynı gün/tür ikinci kez gönderilmez: `telegram_posts`
 tablosundaki (gün, tür) kaydı önce alınır, gönderim başarısız olursa bırakılır ve sonraki çalıştırmada
 tekrar denenir. `TELEGRAM_BOT_TOKEN` veya `TELEGRAM_CHAT_ID` tanımlı değilse hiçbir şey yapmadan çıkar.
 
@@ -213,6 +220,7 @@ app/model/predict.py   skor matrisi, pazarlar, oranlar
 app/model/engine.py    tüm parametreleri birleştiren motor + geriye dönük test
 app/main.py            FastAPI uç noktaları
 app/telegram_bot.py    Telegram kanalına günlük kupon + sonuç paylaşımı
+app/grok_audit.py      Grok kupon denetimi: brief, karar doğrulama, veto → alternatif (docs/GROK_KUPON_DENETIMI.md)
 static/                web arayüzü
 data/iddia.db          yerel SQLite veritabanı (DATABASE_URL yoksa; otomatik oluşur)
 supabase/migrations/   Postgres şeması

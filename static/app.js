@@ -246,6 +246,7 @@ async function renderCoupons() {
   const matches = Number.isFinite(Number(data.matches)) ? Number(data.matches) : 0;
   el.innerHTML = `<p class="muted">${esc(dateText)} · tüm liglerden ${matches} maç</p>` +
     (data.research_trio?.picks?.length ? CouponView.couponCard(data.research_trio, "Önerilen Üçlü Kupon", "b-good") : `<div class="card muted">2,50–4,00 oran aralığında uygun üçlü bulunamadı. Aşağıdaki kuponlar mevcut alternatiflerdir.</div>`) +
+    CouponView.grokAuditCard(data) +
     CouponView.couponGroup(data, "banko", "b-good", data.date) +
     CouponView.couponGroup(data, "surprise", "b-warn", data.date) +
     (["banko","surprise"].some((key)=>data[key]?.publication === "published") ? detail("Günün önceki yayımlanmış kuponları", ["banko","surprise"].map((key)=>data[key]?.publication === "published" ? CouponView.couponCard(data[key],key === "banko" ? "Yayımlanmış Banko" : "Yayımlanmış Sürpriz","b-info") : "").join("")) : "");
@@ -253,6 +254,7 @@ async function renderCoupons() {
     const pick = (data.research_trio?.picks || []).find(item => String(item.id) === node.dataset.grokCouponMatch);
     if (pick) window.GrokIntelligence?.mount(pick, node);
   });
+  if (data.date) window.GrokAudit?.mountControl(el, data.date, () => { if (req === state.couponReq) renderCoupons(); });
   el.querySelectorAll("[data-share-coupon]").forEach((button) => button.addEventListener("click", () => {
     const type = button.dataset.shareType, index = Number(button.dataset.shareIndex) || 0;
     const coupon = CouponView.alternatives(data, type)[index];

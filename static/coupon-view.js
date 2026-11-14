@@ -34,11 +34,24 @@
     return `<span class="badge b-info">oranlar: ${Math.trunc(iddaaPicks)}/${picks.length} iddaa, kalanı tahmini</span>`;
   }
 
+  const GROK_VERDICT = { keep: ["Grok: tut", "b-good"], caution: ["Grok: dikkat", "b-warn"], veto: ["Grok: veto", "b-bad"] };
+
+  const safeUrl = (value) => { try { const u = new URL(String(value)); return u.protocol === "https:" || u.protocol === "http:" ? u.href : ""; } catch (_) { return ""; } };
+
+  function grokBadge(pick) {
+    const verdict = pick && GROK_VERDICT[pick.grok_verdict];
+    if (!verdict) return "";
+    const reason = pick.grok_reason ? ` title="${esc(pick.grok_reason)}"` : "";
+    const url = Array.isArray(pick.grok_sources) ? safeUrl(pick.grok_sources[0]) : "";
+    const source = url ? ` <a class="grok-source" href="${esc(url)}" target="_blank" rel="noopener nofollow">kaynak</a>` : "";
+    return `<div class="grok-verdict"><span class="badge ${verdict[1]}"${reason}>${verdict[0]}</span>${pick.grok_reason ? ` <small class="muted">${esc(pick.grok_reason)}</small>` : ""}${source}</div>`;
+  }
+
   function couponCard(coupon, title, badgeClass, share = null) {
     coupon = coupon && typeof coupon === "object" ? coupon : {};
     const picks = Array.isArray(coupon.picks) ? coupon.picks.filter((pick) => pick && typeof pick === "object") : [];
     const rows = picks.map((pick) => `<tr>
-      <td class="l" data-label="Maç"><b>${esc(pick.home || "Takım bilgisi yok")}</b> – ${esc(pick.away || "Takım bilgisi yok")}</td>
+      <td class="l" data-label="Maç"><b>${esc(pick.home || "Takım bilgisi yok")}</b> – ${esc(pick.away || "Takım bilgisi yok")}${grokBadge(pick)}</td>
       <td data-label="Lig">${esc(pick.league_name || pick.league || "-")}</td>
       <td data-label="Saat">${esc(pickTime(pick.kickoff))}</td>
       <td data-label="Seçim"><span class="badge b-info">${esc({"1X":"ÇŞ 1–0","X2":"ÇŞ 0–2","12":"ÇŞ 1–2"}[pick.market] || pick.market || "-")}</span></td>
@@ -58,7 +71,11 @@
       ? `<p class="coupon-calibration"><span class="badge ${coupon.calibration_status === "limited" ? "b-warn" : "b-info"}">${coupon.calibration_status === "limited" ? "Kalibrasyon verisi sınırlı" : "Kalibrasyon uygulandı"}</span> ${esc(coupon.calibration_note)}</p>` : "";
     const publication = coupon.publication === "published"
       ? `<p class="muted">Günün yayımlanan kuponu. Geçmiş ve Telegram bu kuponu kullanır; oranlar yayımlandığı andaki değerlerdir. Başlamış maçlar yeniden oynanamaz.</p>`
-      : coupon.publication === "live" ? `<p class="muted">Güncel alternatif · günün kayıtlı kuponundan farklı olabilir.</p>` : "";
+      : coupon.publication === "live" ? `<p class="muted">Güncel alternatif · günün kayıtlı kuponundan farklı olabilir.</p>`
+      : coupon.publication === "grok" ? `<p class="muted">Grok veto'su sonrası geçilen veto'suz alternatif; geçmişte ayrı tür olarak ölçülür.</p>` : "";
+    const grokWarning = Number(coupon.grok_vetoed) > 0
+      ? `<p class="coupon-grok-warning"><span class="badge b-bad">Grok veto</span> ${esc(coupon.grok_note || `${coupon.grok_vetoed} bacak güvenilir kaynakla veto edildi; aşağıda alternatif gösterilir.`)}</p>`
+      : coupon.grok_note ? `<p class="coupon-grok-warning"><span class="badge b-info">Grok</span> ${esc(coupon.grok_note)}</p>` : "";
     const tier = coupon.selection_tier || coupon.metadata?.selection_tier || share?.selectionTier;
     const targetMet = coupon.target_met ?? coupon.metadata?.target_met ?? share?.targetMet;
     const tierLabel = tier === "trio" ? "Üçlü hedefi sağlandı" : tier === "preferred" ? (coupon.type === "surprise" ? "Sürpriz hedefi sağlandı" : "Banko hedefi sağlandı") : tier === "banko" || tier === "balanced" ? "Banko tercihi · dengeli" : tier === "surprise" ? "Sürpriz tercihi" : "Günün en uygun mevcut alternatifi";
@@ -70,7 +87,31 @@
     const selectionNote = picks.length
       ? `<p class="coupon-selection-note"><b>${esc(tierLabel)}.</b> ${esc(targetNote)}</p>` : "";
     const research = coupon.type === "trio" && picks.length ? `<div class="coupon-research"><p class="muted">Grok bulguları ayrı risk bilgisidir; seçim olasılıkları değişmez. Araştırma iddiaları ayrıca doğrulanmalıdır.</p>${picks.map(pick => `<div data-grok-coupon-match="${esc(pick.id)}"><b>${esc(pick.home)} – ${esc(pick.away)}</b></div>`).join("")}</div>` : "";
-    return `<div class="card coupon-card"><div class="row-between"><h3>${esc(title)}</h3><span>${source(coupon, picks)} <span class="badge ${esc(badgeClass)}">${picks.length} maç</span></span></div>${selectionNote}${publication}${calibrationNote}${content}${totals}${research}${shareActions}</div>`;
+    return `<div class="card coupon-card"><div class="row-between"><h3>${esc(title)}</h3><span>${source(coupon, picks)} <span class="badge ${esc(badgeClass)}">${picks.length} maç</span></span></div>${selectionNote}${publication}${grokWarning}${calibrationNote}${content}${totals}${research}${shareActions}</div>`;
+  }
+
+  function grokAuditCard(data) {
+    const audit = data && typeof data === "object" ? data.grok_audit : null;
+    if (!audit || typeof audit !== "object") return "";
+    const when = audit.received_at ? new Date(audit.received_at) : null;
+    const stamp = when && !Number.isNaN(when.getTime())
+      ? when.toLocaleString("tr-TR", { timeZone: "Europe/Istanbul", hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" }) : "";
+    const kinds = (Array.isArray(audit.kinds) ? audit.kinds : []).map((k) => ({ daily: "günlük", lineup: "kadro", weekly: "haftalık" }[k] || k)).join(" + ");
+    const counts = `<span class="badge b-bad">${Number(audit.vetoes) || 0} veto</span> <span class="badge b-warn">${Number(audit.cautions) || 0} dikkat</span>`;
+    const swaps = (Array.isArray(audit.swaps) ? audit.swaps : []).map((swap) => {
+      const label = swap.kind === "surprise" ? "Sürpriz" : "Banko";
+      const vetoed = (Array.isArray(swap.vetoed) ? swap.vetoed : []).map(esc).join(", ");
+      return swap.coupon_id
+        ? `<li><b>${label}</b>: ${vetoed} veto edildi → veto'suz alternatif aşağıda.</li>`
+        : `<li><b>${label}</b>: ${vetoed} veto edildi; başlamamış, veto'suz alternatif kalmadı. Bu kuponu oynamamak daha güvenli.</li>`;
+    }).join("");
+    const replaced = ["banko", "surprise"].map((kind) => data[`${kind}_grok`] && Array.isArray(data[`${kind}_grok`].picks) && data[`${kind}_grok`].picks.length
+      ? couponCard(data[`${kind}_grok`], kind === "banko" ? "Banko · Grok sonrası alternatif" : "Sürpriz · Grok sonrası alternatif", "b-info") : "").join("");
+    return `<section class="coupon-group grok-audit"><div class="card"><div class="row-between"><h3>🧠 Grok denetimi</h3><span>${counts}</span></div>
+      <p class="muted">${esc([kinds, stamp].filter(Boolean).join(" · "))}</p>
+      ${audit.summary ? `<p>${esc(audit.summary)}</p>` : ""}
+      ${swaps ? `<ul class="grok-swaps">${swaps}</ul>` : ""}
+      <p class="muted small">Grok yorumu olasılıkları değiştirmez; yalnız kaynaklı olumsuz haberle bacak eler. Garanti değildir.</p></div>${replaced}</section>`;
   }
 
   function alternatives(data, type) {
@@ -127,7 +168,7 @@
     return `<section class="coupon-group"><h3>${label} Kupon Alternatifleri</h3>${content}</section>`;
   }
 
-  const api = { alternatives, couponCard, couponGroup, emptyReason };
+  const api = { alternatives, couponCard, couponGroup, emptyReason, grokAuditCard, grokBadge };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (typeof window !== "undefined") window.CouponView = api;
 })();

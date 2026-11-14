@@ -1,6 +1,7 @@
 // "Kupon Geçmişi" sekmesi: app.js'teki yardımcıları ($, esc, api, pct, fmtDay, fmtDateTime) kullanır.
 const CH_STATUS = { won: ["Tuttu", "b-good"], lost: ["Yattı", "b-bad"], pending: ["Bekliyor", "b-warn"], void: ["İptal", "b-info"] };
-const CH_KIND = { banko: "Banko", surprise: "Sürpriz" };
+const CH_KIND = { banko: "Banko", surprise: "Sürpriz", banko_grok: "Banko · Grok sonrası", surprise_grok: "Sürpriz · Grok sonrası" };
+const CH_GROK_KINDS = ["banko_grok", "surprise_grok"];
 
 const chBadge = (s) => `<span class="badge ${CH_STATUS[s][1]}">${CH_STATUS[s][0]}</span>`;
 const chPct = (v, digits = 0) => (v == null ? "–" : (v * 100).toFixed(digits) + "%");
@@ -31,6 +32,9 @@ async function renderCouponHistory() {
   el.innerHTML = `<p class="muted">Yükleniyor…</p>`;
   const h = await api("/api/coupon-history?days=60");
   const { banko, surprise, total } = h.summary;
+  // Grok veto'su sonrası geçilen alternatifler yalnız kayıt varsa gösterilir; "Toplam" yayımlanan kuponları sayar.
+  const grokRows = CH_GROK_KINDS.filter((k) => h.summary[k]?.coupons).map((k) => chSummaryRow(CH_KIND[k], h.summary[k])).join("");
+  const grokDay = (d) => CH_GROK_KINDS.filter((k) => d[k]).map((k) => chCoupon(k, d[k])).join("");
   if (!total.coupons) {
     el.innerHTML = `<div class="card muted">Henüz kayıtlı kupon yok. Günün Banko ve Sürpriz kuponu üretildiği haliyle kaydedilir; maçlar bitince sonuçlar otomatik işlenir.</div>`;
     return;
@@ -43,8 +47,8 @@ async function renderCouponHistory() {
     </div>
     <div class="card"><h3>Her gün ${h.stake} TL yatırsaydın</h3>
       <table><tr><th class="l">Kupon</th><th>Tutan/Sonuçlanan</th><th>Tutma</th><th>Yatırılan</th><th>Dönen</th><th>Kâr/Zarar</th><th>Kâr oranı</th></tr>
-      ${chSummaryRow("Banko", banko)}${chSummaryRow("Sürpriz", surprise)}${chSummaryRow("Toplam", total)}</table>
-      <p class="muted">Her gün Banko ve Sürpriz kuponun her birine ${h.stake} TL, kaydedilen oranla; yalnız sonuçlanan kuponlar sayılır. Ertelenen/iptal maç oranı 1.00 kabul edilir.</p></div>
-    <div class="card"><h3>Günlük liste</h3>${h.days.map((d) => `<div class="ch-day"><div class="row-between"><b>${fmtDay(d.date + "T12:00:00Z")}</b><span class="${chSign(d.profit)}">${chTL(d.profit)}</span></div>${chCoupon("banko", d.banko)}${chCoupon("surprise", d.surprise)}</div>`).join("")}
+      ${chSummaryRow("Banko", banko)}${chSummaryRow("Sürpriz", surprise)}${chSummaryRow("Toplam", total)}${grokRows}</table>
+      <p class="muted">Her gün Banko ve Sürpriz kuponun her birine ${h.stake} TL, kaydedilen oranla; yalnız sonuçlanan kuponlar sayılır. Ertelenen/iptal maç oranı 1.00 kabul edilir.${grokRows ? " Grok satırları veto sonrası alternatifleri ayrı ölçer; Toplam'a dahil değildir." : ""}</p></div>
+    <div class="card"><h3>Günlük liste</h3>${h.days.map((d) => `<div class="ch-day"><div class="row-between"><b>${fmtDay(d.date + "T12:00:00Z")}</b><span class="${chSign(d.profit)}">${chTL(d.profit)}</span></div>${chCoupon("banko", d.banko)}${chCoupon("surprise", d.surprise)}${grokDay(d)}</div>`).join("")}
       ${h.total_days > h.days.length ? `<p class="muted">Son ${h.days.length} gün gösteriliyor (toplam ${h.total_days}).</p>` : ""}</div>`;
 }
