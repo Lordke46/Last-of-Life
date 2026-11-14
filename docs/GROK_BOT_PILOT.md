@@ -30,6 +30,30 @@ Bölüm 1–3 üretimde **tamamlandı**; sırada yalnız bölüm 4 (Grok Bot) ve
 | Workflow `mode: enqueue` elle çalıştırma | yeşil (milli ara: 0 aday) |
 | Doğrulama işi `401882805` Athletic–Espanyol (20.11) | **tamamlandı**: Bot claim → araştırma → rapor `ae3d6028…` rev 1, `schema_valid`, 16 bulgu / 15 kaynak / 8 limitasyon |
 
+## Sana kalan adımlar (yalnız Grok Bot tarafı)
+
+Anahtar Bot'ta kayıtlı ve bir iş elle uçtan uca başarıyla işlendi. Otomatiğe
+almak için sırayla:
+
+- [ ] **Skill'i kaydet.** Bölüm 4'teki `lol-research-run` metnini Skill olarak ekle
+      (sohbette tek seferlik çalıştırdıysan rutin için ayrıca kayıt gerekir).
+- [ ] **Custom Rule.** Settings → General → Custom Rules: *run curl against
+      https://iddia-oran.vercel.app/api/research* → **Allow automatically**. Yoksa
+      gözetimsiz run'lar onay kartında takılır.
+- [ ] **Rutin oluştur.** Skill'i çalıştıran rutin; tetikleyici **webhook**
+      (yedek: zaman tetikleyici 07:30 TSİ). Kartta `POST to <URL>` ve `key` görünür.
+- [ ] **Webhook bilgisini ilet.** `~/Desktop/lol-webhook.txt` dosyasına 1. satır URL,
+      2. satır key yaz; sohbete yapıştırma. Ben `GROK_BOT_WEBHOOK_URL/KEY` secret'larını
+      `research-pilot` ortamına koyar, dosyayı silerim.
+- [ ] **Test.** GitHub → Actions → `research-pilot` → *Run workflow → enqueue*
+      (bülten fiyatlı gün olmalı; milli arada 0 aday çıkar), ardından rutinde **Test**.
+      Bölüm 6 kontrolleri geçince ben repo değişkeni `RESEARCH_PILOT_ENABLED=1` eklerim;
+      cron 06:30 TSİ'de çalışmaya başlar.
+
+Sonrası (ayrı onay, bölüm 7): raporların günlük kupon brief'ine/Grok denetimine
+bağlanması ve `source_news` içindeki yabancı "Athletic Club" haber sızıntısının
+takım eşlemesinde düzeltilmesi.
+
 Bu dosya yalnız **kurulum ve çalıştırma** adımlarını verir. API sözleşmesi
 `docs/GROK_RESEARCH_MVP.md`, kuyruk guard'ları `docs/GROK_QUEUE_AND_EVALUATION.md`,
 Skill çıktısı `app/grok_skill_adapter.py` içindedir; bunlar değişmedi.
