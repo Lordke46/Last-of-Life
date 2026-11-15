@@ -28,6 +28,15 @@ def _latest_trusted_quote(conn):
 
 
 def refresh_if_stale(now=None) -> dict:
+    """Best-effort read-through: a refresh/DB error never breaks the caller's response."""
+    try:
+        return _refresh_if_stale(now)
+    except Exception as exc:  # noqa: BLE001 - last-good prices keep being served
+        print(f"Oran yenilemesi atlandı: {type(exc).__name__}: {exc}", flush=True)
+        return {"status": "error", "error": str(exc)[:180]}
+
+
+def _refresh_if_stale(now=None) -> dict:
     """Refresh once synchronously when stored prices are old; never runs in local preview."""
     now = now or datetime.now(timezone.utc)
     if not db.is_postgres():

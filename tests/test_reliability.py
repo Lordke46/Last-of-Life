@@ -224,3 +224,19 @@ class LiveTests(unittest.TestCase):
             before=time.monotonic();out=live.get_live_snapshot()
         self.assertLess(time.monotonic()-before,.12)
         self.assertTrue(out['stale'])
+
+
+class CouponRetryTest(unittest.TestCase):
+    def test_transient_coupon_failure_is_retried_once(self):
+        from datetime import date
+        from app import main
+        calls = []
+        def flaky(target, build=None):
+            calls.append(target)
+            if len(calls) == 1:
+                raise RuntimeError("deadlock detected")
+            return {"date": target.isoformat()}
+        with patch.object(main.coupon_history, "daily_coupons", flaky), \
+             patch.object(main.grok_audit, "decorate", lambda built: built):
+            self.assertEqual(main._coupons(date(2026, 11, 15)), {"date": "2026-11-15"})
+        self.assertEqual(len(calls), 2)
