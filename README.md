@@ -110,7 +110,7 @@ toplam-oran tabanı vardır ve bu tabanın üstünde **ortak tutma olasılığı
 iddaa marjı her bacakta yeniden ödendiği için daha az maç daima daha olasıdır; bu yüzden MBS 1–2 maçlar
 (tek/iki maç oynanabilen Milli takım, alt lig vb.) havuzda korunur ve bültenin MBS kuralı kupon boyutuna
 uygulanır (kupon en az bacaklarının en yüksek MBS'si kadar maç içerir).
-- **Banko**: 1–3 maç, bacak 1,10–2,00 ve ≥%45, toplam oran 1,80–4,00, ortak olasılık ≥%25.
+- **Banko**: 2–3 maç (tek maç banko sayılmaz), bacak 1,10–2,00 ve ≥%45, toplam oran 1,80–4,00, ortak olasılık ≥%25.
 - **Sürpriz**: 2–4 maç, bacak 1,40–3,50 ve ≥%33, toplam oran 4,50–15, ortak olasılık ≥%7 (yüksek oran ama
   piyango değil).
 - Her tür için 3 alternatif üretilir; alternatifler önce **ortak maç içermeyecek** şekilde seçilir.

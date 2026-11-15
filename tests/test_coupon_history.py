@@ -367,6 +367,24 @@ class IddaaResultTest(DbCase):
         self.assertEqual(banko["status"], "lost")
 
 
+class RepublishTest(DbCase):
+    def test_unstarted_single_leg_banko_is_republished_unless_sent_or_started(self):
+        future = (datetime.now(timezone.utc) + timedelta(hours=3)).strftime("%Y-%m-%dT%H:%MZ")
+        day = datetime.now(ch.TZ).date().isoformat()
+        self.freeze(day_coupons(day, banko=[pick(1, kickoff=future)],
+                                surprise=[pick(2, kickoff=future), pick(3, kickoff=future)]))
+        with db.session() as conn:
+            conn.execute("INSERT INTO telegram_posts(day, kind, status, created_at) VALUES(?, 'coupon', 'sent', 'x')", (day,))
+            self.assertEqual(ch.republish_below_minimum(conn, day), [])
+            conn.execute("DELETE FROM telegram_posts")
+            self.assertEqual(ch.republish_below_minimum(conn, day), ["banko"])
+            self.assertIsNone(ch.load_saved(conn, day, "banko"))
+            self.assertIsNotNone(ch.load_saved(conn, day, "surprise"))
+        self.freeze(day_coupons(day, banko=[pick(4, kickoff=OLD)]))
+        with db.session() as conn:
+            self.assertEqual(ch.republish_below_minimum(conn, day), [])
+
+
 class OptionalStepTest(DbCase):
     def test_failed_optional_step_rolls_back_its_writes_and_keeps_transaction_usable(self):
         def broken():

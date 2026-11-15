@@ -60,19 +60,12 @@ class BankoTest(unittest.TestCase):
         self.assertGreaterEqual(math.prod(p['odds'] for p in picks),cp.BANKO_MIN_TOTAL_ODDS)
         self.assertEqual([p['id'] for p in picks],[1,2])
 
-    def test_single_on_mbs_one_fixture_beats_multi_leg_at_same_payout(self):
-        # Same total odds: every extra leg pays the bookmaker margin again, so the
-        # single with MBS 1 has the higher joint probability and wins.
+    def test_banko_is_never_a_single_even_when_the_single_is_more_probable(self):
         single = entry(1, {"1": (.47, 1.85)})
         pair = [entry(i, {"1": (.62, 1.36)}) for i in (2, 3)]
-        for _, choices in pair:
-            for choice in choices: choice['min_matches'] = 2
-        picks = select_banko([single, *pair])
-        self.assertEqual([p['id'] for p in picks], [1])
-        self.assertTrue(picks[0]['target_met'])
-        single[1][0]['min_matches'] = 3  # provider demands a triple: the pair is now the best
         picks = select_banko([single, *pair])
         self.assertEqual([p['id'] for p in picks], [2, 3])
+        self.assertTrue(picks[0]['target_met'])
 
     def test_banko_prefers_highest_probability_above_floor_not_highest_total(self):
         entries = [entry(1, {"1X": (.80, 1.25), "1": (.55, 1.75)}), entry(2, {"1X": (.78, 1.30), "1": (.52, 1.80)})]
