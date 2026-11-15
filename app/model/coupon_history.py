@@ -245,6 +245,26 @@ def _optional(conn, name, fn, message):
     return result
 
 
+def republish_below_minimum(conn, day: str, now: datetime | None = None) -> list[str]:
+    """Kural değişmeden önce dondurulmuş, artık asgari maç sayısını karşılamayan kuponu siler ki
+    yeniden yayımlansın. Yalnız hiçbir maçı başlamamış ve Telegram'a gönderilmemiş günde yapılır."""
+    from .coupons import TIERS
+    now = now or _now()
+    if conn.execute("SELECT 1 FROM telegram_posts WHERE day=? AND kind='coupon' AND status='sent'",
+                    (day,)).fetchone():
+        return []
+    removed = []
+    for kind in KINDS:
+        rows = conn.execute("SELECT kickoff FROM saved_coupon_picks WHERE day=? AND kind=?", (day, kind)).fetchall()
+        if not rows or len(rows) >= TIERS[kind]["picks"][0] or any(_started(dict(r), now) for r in rows):
+            continue
+        conn.execute("DELETE FROM saved_coupon_picks WHERE day=? AND kind=?", (day, kind))
+        conn.execute("DELETE FROM saved_coupons WHERE day=? AND kind=?", (day, kind))
+        conn.execute("DELETE FROM meta WHERE key=?", (f"coupon_metadata:{day}:{kind}",))
+        removed.append(kind)
+    return removed
+
+
 def daily_coupons(target, build=build_coupons) -> dict:
     """Web ve Telegram aynı (gün, tür) kaydını yayımlar; alternatifler canlı kalır."""
     from ..db import session
@@ -255,6 +275,8 @@ def daily_coupons(target, build=build_coupons) -> dict:
         built[f'current_{kind}_alternatives'] = [{**c, 'publication':'live'} for c in built.get(f'{kind}_alternatives', [])]
     with session() as conn:
         if target == _now().astimezone(TZ).date():
+            _optional(conn, "republish", lambda: republish_below_minimum(conn, target.isoformat()),
+                      "eski kural kuponu yenilenemedi")
             freeze(conn, built)
             _optional(conn, "track_alternatives", lambda: track_alternatives(conn, built), "alternatif seçimler izlenemedi")
         for kind in KINDS:

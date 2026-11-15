@@ -30,7 +30,7 @@ LOOKAHEAD_DAYS = 60
 # MBS 1–2 verdiği maçlar az bacaklı kuponda doğal olarak öne çıkar.
 TIERS = {
     "banko": {
-        "picks": (1, 3),            # tek maç yalnız MBS 1 verilen seçimde mümkündür
+        "picks": (2, 3),            # kupon en az 2 maç; tek maç olasılıkta önde olsa da banko sayılmaz
         "leg_odds": (1.10, 2.00),
         "leg_min_p": .45,
         "total_odds": (1.80, 4.00),
