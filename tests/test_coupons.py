@@ -600,6 +600,15 @@ class SelectionGuardTest(unittest.TestCase):
         entries = [entry(i, {'1': (.8, 1.4)}) for i in (1, 2)]
         self.assertEqual(cp._select_balanced(entries, "banko", 1, blocked={"league": {"eng.1"}}), [])
 
+    def test_unreadable_history_leaves_the_session_usable(self):
+        import sqlite3
+        conn = sqlite3.connect(":memory:")
+        conn.execute("CREATE TABLE meta (key TEXT, value TEXT)")
+        conn.execute("BEGIN")
+        conn.execute("INSERT INTO meta VALUES ('kept', '1')")
+        self.assertEqual(cp.clv_blocklist(conn), {"league": set(), "market": set()})  # tablo yok/erişim yok
+        self.assertEqual(conn.execute("SELECT value FROM meta").fetchone()[0], "1")
+
 
 class StakePlanTest(unittest.TestCase):
     def test_quarter_kelly_is_clamped_and_halved_after_losing_week(self):

@@ -1,0 +1,42 @@
+name: Zamanlayıcı
+
+# GitHub cron'ları yoğunlukta saatlerce atlıyor (15 Kas: 9 saat hiç çalışmadı; Telegram ve
+# Grok kuyruğu tetiklenmedi). Bu iş ~5,5 saat açık kalır, zamanı gelen işleri workflow_dispatch
+# ile başlatır ve bitince kendini yeniden başlatır. Cron yalnız zincir koparsa yedektir.
+# İşlerin hepsi idempotent: kilit/cooldown (güncelleme), telegram_posts (Telegram), kuyruk (Grok).
+on:
+  schedule:
+    - cron: "7 */3 * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: scheduler
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Zamanı gelen işleri başlat
+        shell: bash
+        run: |
+          end=$(( $(date +%s) + 330*60 ))
+          fire() { gh workflow run "$@" -R "$REPO" && echo "$(date -u +%H:%M) $*" || echo "::warning::$1 başlatılamadı"; }
+          while [ "$(date +%s)" -lt "$end" ]; do
+            hh=$(date -u +%H); mm=$(date -u +%M)
+            case "$mm" in 17|47) fire quick.yml ;; esac
+            [ "$mm" = 38 ] && fire telegram.yml
+            case "$hh:$mm" in 03:30|04:30|05:30) fire research-pilot.yml -f mode=enqueue ;; esac
+            sleep $(( 60 - $(date +%S | sed 's/^0//') ))
+          done
+      - name: Zinciri sürdür
+        if: always()
+        run: gh workflow run scheduler.yml -R "$REPO"
