@@ -247,8 +247,13 @@ async function renderCoupons() {
   // Sekmeye dönüşte son kupon hemen görünür; sunucu yanıtı arka planda tazelenir.
   if (cached) drawCoupons(cached.data, req); else el.innerHTML = `<p class="muted">Kuponlar yükleniyor…</p>`;
   let d;
-  try { d = await api(`/api/coupons?day=${day}`,{cache:"no-store"}); }
-  catch (error) { if (cached) return; throw error; }
+  const load = () => api(`/api/coupons?day=${day}`,{cache:"no-store"});
+  try { d = await load(); }
+  catch (_) {
+    // Sunucudaki geçici hata (eşzamanlı güncelleme vb.) tek denemede kullanıcıya yansımasın.
+    await new Promise((r) => setTimeout(r, 1500));
+    try { d = await load(); } catch (error) { if (cached) return; throw error; }
+  }
   if (req !== state.couponReq) return; // daha yeni bir gün seçildi
   const text = JSON.stringify(d);
   if (cached?.text === text) return refreshCouponResults(req);

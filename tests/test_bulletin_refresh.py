@@ -31,6 +31,11 @@ class BulletinRefreshTest(unittest.TestCase):
                          "VALUES('e1','small:test:league',123,'2099-01-01T00:00:00Z','H','A',?)", (old,))
             conn.execute("INSERT INTO iddaa_odds(event_id,market,odd) VALUES('e1','1',1.9)")
 
+    def test_database_error_never_breaks_the_calling_endpoint(self):
+        with patch("app.bulletin_refresh.session", side_effect=RuntimeError("deadlock detected")):
+            result = refresh_if_stale()
+        self.assertEqual(result["status"], "error")
+
     def test_stale_prices_trigger_bounded_refresh_and_report_only_after_commit(self):
         self.seed_old_prices()
 

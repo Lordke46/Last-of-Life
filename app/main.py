@@ -346,7 +346,11 @@ def coupons(day: str | None = Query(None, description="YYYY-MM-DD (Türkiye saat
 
 
 def _coupons(target):
-    built = coupon_history.daily_coupons(target, build=build_coupons)
+    try:
+        built = coupon_history.daily_coupons(target, build=build_coupons)
+    except Exception as exc:  # noqa: BLE001 - eşzamanlı yazma/bağlantı hatası çoğunlukla geçicidir
+        print(f"Kupon üretimi yeniden deneniyor: {type(exc).__name__}: {exc}", flush=True)
+        built = coupon_history.daily_coupons(target, build=build_coupons)
     try:
         return grok_audit.decorate(built)
     except Exception as exc:  # noqa: BLE001 — denetim notu kupon yanıtını asla bozmaz
