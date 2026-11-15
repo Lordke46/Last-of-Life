@@ -75,13 +75,19 @@ def clv_blocklist(conn, now: datetime | None = None) -> dict[str, set[str]]:
     o seçimlerde avantajımız yok demektir. Yeterli kayıt yoksa hiçbir şey elenmez."""
     since = ((now or datetime.now(timezone.utc)) - timedelta(days=CLV_LOOKBACK_DAYS)).astimezone(TZ).date().isoformat()
     stats = {"league": {}, "market": {}}
+    # Savepoint: araştırma kuyruğunun kısıtlı okuma rolü bu tabloyu göremez; Postgres'te yakalanan
+    # hata işlemi iptal edip aynı oturumdaki sonraki kupon sorgularını düşürmesin.
+    conn.execute("SAVEPOINT clv_blocklist")
     try:
         # Kupon + izlenen (tracked) kayıtta aynı gün/maç/pazar bir kez sayılır.
         rows = conn.execute("SELECT league, market, MAX(odds) AS odds, MAX(closing_odds) AS closing_odds "
                             "FROM saved_coupon_picks WHERE day >= ? AND closing_odds > 1 AND odds > 1 "
                             "AND status != 'void' GROUP BY day, match_id, league, market", (since,)).fetchall()
     except Exception:  # noqa: BLE001 — eski şema/erişim sorunu kupon üretimini durdurmaz
+        conn.execute("ROLLBACK TO SAVEPOINT clv_blocklist")
+        conn.execute("RELEASE SAVEPOINT clv_blocklist")
         return {"league": set(), "market": set()}
+    conn.execute("RELEASE SAVEPOINT clv_blocklist")
     for r in rows:
         clv = r["odds"] / r["closing_odds"] - 1
         for key in ("league", "market"):
